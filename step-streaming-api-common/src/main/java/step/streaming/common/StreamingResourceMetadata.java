@@ -1,0 +1,97 @@
+package step.streaming.common;
+
+import java.util.Objects;
+
+/**
+ * Holds metadata about a streaming resource, such as the original filename
+ * and its MIME type.
+ * <p>
+ * This metadata is typically supplied by clients when uploading a file, and
+ * may be used by servers or downloaders to interpret or store the file appropriately.
+ */
+public class StreamingResourceMetadata {
+
+    private String filename;
+    private String mimeType;
+
+    /**
+     * Regular expression used to validate MIME types of the form "type/subtype",
+     * such as "text/plain" or "application/json".
+     */
+    private static final String MIME_TYPE_PATTERN = "^[a-zA-Z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+-]+$";
+
+    /**
+     * Default constructor for deserialization or frameworks.
+     */
+    public StreamingResourceMetadata() {
+    }
+
+    /**
+     * Constructs a {@code StreamingResourceMetadata} with the given filename and MIME type.
+     * Validates the MIME type format upon construction.
+     *
+     * @param filename the name of the file (must not be {@code null})
+     * @param mimeType the MIME type of the file (must match {@link #MIME_TYPE_PATTERN})
+     * @throws NullPointerException     if filename is {@code null}
+     * @throws IllegalArgumentException if MIME type is {@code null} or invalid
+     */
+    public StreamingResourceMetadata(String filename, String mimeType) {
+        setFilename(filename);
+        setMimeType(mimeType);
+    }
+
+    /**
+     * Returns the file name associated with this resource.
+     *
+     * @return the filename (never {@code null})
+     */
+    public String getFilename() {
+        return filename;
+    }
+
+    /**
+     * Sets the filename.
+     *
+     * @param filename the filename to set (must not be {@code null})
+     * @throws NullPointerException if filename is {@code null}
+     */
+    public void setFilename(String filename) {
+        this.filename = Objects.requireNonNull(filename, "Filename must not be null");
+    }
+
+    /**
+     * Returns the MIME type of the resource.
+     *
+     * @return the MIME type
+     */
+    public String getMimeType() {
+        return mimeType;
+    }
+
+    /**
+     * Sets the MIME type for the resource.
+     *
+     * @param mimeType the MIME type to set (must match {@link #MIME_TYPE_PATTERN})
+     * @throws IllegalArgumentException if the MIME type is {@code null} or invalid
+     */
+    public void setMimeType(String mimeType) {
+        if (mimeType == null || !mimeType.matches(MIME_TYPE_PATTERN)) {
+            throw new IllegalArgumentException("Invalid MIME type format: " + mimeType);
+        }
+        this.mimeType = mimeType;
+    }
+
+    /**
+     * Common MIME type constants.
+     */
+    public static class CommonMimeTypes {
+        /** MIME type for plain text. */
+        public static final String TEXT_PLAIN = "text/plain";
+
+        /** MIME type for JSON documents. */
+        public static final String APPLICATION_JSON = "application/json";
+
+        /** Generic MIME type for binary data. */
+        public static final String APPLICATION_OCTET_STREAM = "application/octet-stream";
+    }
+}
