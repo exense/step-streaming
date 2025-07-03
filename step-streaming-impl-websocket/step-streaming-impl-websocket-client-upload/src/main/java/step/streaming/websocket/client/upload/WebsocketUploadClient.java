@@ -50,6 +50,7 @@ public class WebsocketUploadClient {
     }
 
     public WebsocketUploadClient(URI endpointUri, WebsocketUpload upload, WebSocketContainer container, long reportIntervalMs) throws IOException {
+        UploadProtocolMessage.initialize();
         this.upload = Objects.requireNonNull(upload);
         upload.onClose(this::onUploadClosed);
         this.reportIntervalMs = reportIntervalMs;

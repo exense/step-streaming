@@ -30,6 +30,7 @@
 		</developer>
 	</developers>
 
+	<!-- Reminder: don't forget to add all modules to the end of the dependencyManagement section just below, for export -->
 	<modules>
 		<module>step-streaming-api-common</module>
 		<module>step-streaming-api-client-upload</module>
@@ -53,12 +54,14 @@
 		<maven.compiler.target>11</maven.compiler.target>
 		<maven.compiler.release>11</maven.compiler.release>
 
-		<!-- dependencies -->
+		<!-- All dependencies should be resolvable from here, without further specifying versions -->
 		<dependencies.version>2025.6.25</dependencies.version>
 	</properties>
 
+	<!-- available dependencies, can/should be used in modules and dependent projects WITHOUT specifying a version number -->
 	<dependencyManagement>
 		<dependencies>
+			<!-- IMPORTED dependencies -->
 			<dependency>
 				<groupId>ch.exense.dependencies</groupId>
 				<artifactId>dependencies-logging</artifactId>
@@ -93,6 +96,64 @@
 				<version>${dependencies.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
+			</dependency>
+
+			<!-- EXPORTED dependencies, basically a BOM for exporting our own modules -->
+			<dependency>
+				<groupId>ch.exense.streaming</groupId>
+				<artifactId>step-streaming-api-common</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>ch.exense.streaming</groupId>
+				<artifactId>step-streaming-api-server</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>ch.exense.streaming</groupId>
+				<artifactId>step-streaming-api-client-upload</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>ch.exense.streaming</groupId>
+				<artifactId>step-streaming-api-client-download</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>ch.exense.streaming</groupId>
+				<artifactId>step-streaming-impl-common</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>ch.exense.streaming</groupId>
+				<artifactId>step-streaming-impl-server</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<!-- not sure if this non-leaf submodule is really needed for export, but it doesn't harm -->
+			<dependency>
+				<groupId>ch.exense.streaming</groupId>
+				<artifactId>step-streaming-impl-websocket</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>ch.exense.streaming</groupId>
+				<artifactId>step-streaming-impl-websocket-common</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>ch.exense.streaming</groupId>
+				<artifactId>step-streaming-impl-websocket-server</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>ch.exense.streaming</groupId>
+				<artifactId>step-streaming-impl-websocket-client-upload</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>ch.exense.streaming</groupId>
+				<artifactId>step-streaming-impl-websocket-client-download</artifactId>
+				<version>${project.version}</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>

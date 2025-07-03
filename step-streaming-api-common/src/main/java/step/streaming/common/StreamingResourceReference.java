@@ -45,4 +45,9 @@ public class StreamingResourceReference {
     public void setUri(URI uri) {
         this.uri = Objects.requireNonNull(uri, "URI must not be null");
     }
+
+    @Override
+    public String toString() {
+        return Objects.toString(uri);
+    }
 }

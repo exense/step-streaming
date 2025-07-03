@@ -24,9 +24,9 @@ public class DefaultStreamingResourceManagerTest {
 
     @Before
     public void setUp() throws IOException {
-        storageBackend = new TestingStorageBackend(null, false);
+        storageBackend = new TestingStorageBackend(StreamingResourcesStorageBackend.DEFAULT_NOTIFY_INTERVAL_MILLIS, false);
         catalogBackend = new InMemoryCatalogBackend();
-        manager = new DefaultStreamingResourceManager(catalogBackend, storageBackend, new DefaultStreamingResourceReferenceMapper(null, "/{id}", "{id}"));
+        manager = new DefaultStreamingResourceManager(catalogBackend, storageBackend, new DefaultStreamingResourceReferenceMapper(null, "/{id}", "id"));
     }
 
     @After

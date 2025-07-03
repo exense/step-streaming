@@ -17,13 +17,11 @@
 		<dependency>
 			<groupId>ch.exense.streaming</groupId>
 			<artifactId>step-streaming-api-server</artifactId>
-			<version>${project.version}</version>
 		</dependency>
 
 		<dependency>
 			<groupId>ch.exense.streaming</groupId>
 			<artifactId>step-streaming-impl-common</artifactId>
-			<version>${project.version}</version>
 		</dependency>
 
 	</dependencies>

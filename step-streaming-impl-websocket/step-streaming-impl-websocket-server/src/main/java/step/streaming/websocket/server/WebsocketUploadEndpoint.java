@@ -36,6 +36,7 @@ public class WebsocketUploadEndpoint extends Endpoint {
     private String resourceId;
 
     public WebsocketUploadEndpoint(StreamingResourceManager manager, WebsocketServerEndpointSessionsHandler sessionsHandler) {
+        UploadProtocolMessage.initialize();
         this.manager = manager;
         this.sessionsHandler = sessionsHandler;
     }

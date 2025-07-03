@@ -19,5 +19,4 @@
         <module>step-streaming-impl-websocket-client-upload</module>
         <module>step-streaming-impl-websocket-client-download</module>
     </modules>
-
 </project>

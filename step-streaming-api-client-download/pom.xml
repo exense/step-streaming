@@ -17,7 +17,6 @@
 		<dependency>
 			<groupId>ch.exense.streaming</groupId>
 			<artifactId>step-streaming-api-common</artifactId>
-			<version>${project.version}</version>
 		</dependency>
 	</dependencies>
 

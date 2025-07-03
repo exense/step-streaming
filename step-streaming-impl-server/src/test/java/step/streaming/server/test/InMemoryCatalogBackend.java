@@ -28,7 +28,7 @@ public class InMemoryCatalogBackend implements StreamingResourcesCatalogBackend 
     private final Map<String, CatalogEntry> catalog = new ConcurrentHashMap<>();
 
     @Override
-    public String createResourceReference(StreamingResourceMetadata metadata) {
+    public String createResource(StreamingResourceMetadata metadata) {
         String resourceId = UUID.randomUUID().toString();
         catalog.put(resourceId, new CatalogEntry(
                 metadata.getFilename(),

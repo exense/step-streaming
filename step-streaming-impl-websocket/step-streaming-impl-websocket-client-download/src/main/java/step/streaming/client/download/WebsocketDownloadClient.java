@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
+import step.streaming.websocket.protocol.download.DownloadProtocolMessage;
 import step.streaming.websocket.protocol.download.DownloadServerMessage;
 import step.streaming.websocket.protocol.download.RequestChunkMessage;
 import step.streaming.websocket.protocol.download.StatusChangedMessage;
@@ -50,6 +51,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
     }
 
     public WebsocketDownloadClient(URI endpointUri, WebSocketContainer container) throws IOException {
+        DownloadProtocolMessage.initialize();
         session = connect(endpointUri, container);
         state = State.CONNECTED;
         logger.debug("{} Connected to endpoint {}, awaiting first status", this, endpointUri);

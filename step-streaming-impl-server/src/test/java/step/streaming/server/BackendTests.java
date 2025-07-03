@@ -10,7 +10,7 @@ public class BackendTests {
     TestingStorageBackend storage;
     @Before
     public void setup() {
-        storage = new TestingStorageBackend(null, false);
+        storage = new TestingStorageBackend(FilesystemStreamingResourcesStorageBackend.DEFAULT_NOTIFY_INTERVAL_MILLIS, false);
     }
 
     @After
@@ -20,7 +20,7 @@ public class BackendTests {
     @Test
     public void testUploadWithTwoDownloads() throws Exception {
         StreamingResourcesCatalogBackend catalog = new InMemoryCatalogBackend();
-        StreamingResourceManager manager = new DefaultStreamingResourceManager(catalog, storage, new DefaultStreamingResourceReferenceMapper(null, "/{id}", "{id}"));
+        StreamingResourceManager manager = new DefaultStreamingResourceManager(catalog, storage, new DefaultStreamingResourceReferenceMapper(null, "/{id}", "id"));
         storage.cleanup();
     }
 }

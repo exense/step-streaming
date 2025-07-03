@@ -7,8 +7,19 @@ import java.util.function.Consumer;
 /**
  * Storage backend used on the server side.
  * The storage is responsible for saving and retrieving actual data content.
+ * <p>
+ * Storage implementations MUST support regular status updates via callbacks when writing data to indicate progress.
+ * The default interval is defined here, but implementations may choose to make it configurable. It is an important
+ * setting, as it controls how often incoming data streams will emit events -- which ultimately affects the frequency
+ * of status notifications. Note that events should only be emitted if there actually was new data since the last event
+ * emission. In other words, events are never emitted at a faster rate than the interval, but may be less frequent when
+ * no data arrives.
  */
+
 public interface StreamingResourcesStorageBackend {
+    /** Default status update notification interval */
+    long DEFAULT_NOTIFY_INTERVAL_MILLIS = 1000;
+
 
     /**
      * Prepares for writing data to a new resource.
@@ -21,9 +32,9 @@ public interface StreamingResourcesStorageBackend {
     /**
      * Writes data from the input stream and optionally notifies about the growing size.
      *
-     * @param resourceId    internal resource identifier
-     * @param input         input stream of data to write. This stream MUST be closed at the end of the method.
-     * @param sizeListener  optional listener to receive current size updates (may be null)
+     * @param resourceId   internal resource identifier
+     * @param input        input stream of data to write. This stream MUST be closed at the end of the method.
+     * @param sizeListener optional listener to receive current size updates (may be null)
      * @throws IOException if the write fails
      */
     void writeChunk(String resourceId, InputStream input, Consumer<Long> sizeListener) throws IOException;

@@ -9,12 +9,12 @@ import step.streaming.common.StreamingResourceStatus;
 public interface StreamingResourcesCatalogBackend {
 
     /**
-     * Creates a new resource reference and registers its metadata.
+     * Creates a new resource and registers its metadata.
      *
      * @param metadata resource metadata
      * @return a unique internal resource ID
      */
-    String createResourceReference(StreamingResourceMetadata metadata);
+    String createResource(StreamingResourceMetadata metadata);
 
     /**
      * Updates the current transfer status and size of the resource.

@@ -16,9 +16,10 @@ public class DefaultStreamingResourceReferenceMapper implements StreamingResourc
 
     public DefaultStreamingResourceReferenceMapper(URI baseUri, String pathTemplate, String placeholder) {
         if (baseUri != null) setBaseUri(baseUri);
-        if (!Objects.requireNonNull(placeholder).matches("\\{[a-zA-Z_][a-zA-Z0-9_]*}")) {
-            throw new IllegalArgumentException("Invalid placeholder: " + placeholder + ": must start with '{' and end with '}', and consist of alphanumeric characters");
+        if (!Objects.requireNonNull(placeholder).matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
+            throw new IllegalArgumentException("Invalid placeholder: " + placeholder + ": must consist of alphanumeric characters");
         }
+        placeholder = "{" + placeholder + "}";
         this.placeholder = placeholder;
         this.pathTemplate = Objects.requireNonNull(pathTemplate);
         if (!pathTemplate.contains(placeholder)) {

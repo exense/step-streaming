@@ -10,6 +10,7 @@ import step.streaming.common.StreamingResourceStatus;
 import step.streaming.data.CheckpointingOutputStream;
 import step.streaming.server.StreamingResourceManager;
 import step.streaming.websocket.protocol.download.DownloadClientMessage;
+import step.streaming.websocket.protocol.download.DownloadProtocolMessage;
 import step.streaming.websocket.protocol.download.RequestChunkMessage;
 import step.streaming.websocket.protocol.download.StatusChangedMessage;
 
@@ -23,11 +24,11 @@ import java.util.function.Consumer;
 public class WebsocketDownloadEndpoint extends Endpoint {
     public static final String DEFAULT_ENDPOINT_URL = "/ws/streaming/download/{id}";
     public static final String DEFAULT_PARAMETER_NAME = "id";
-    public static final String DEFAULT_PARAMETER_PLACEHOLDER = "{id}";
 
     private static final Logger logger = LoggerFactory.getLogger(WebsocketDownloadEndpoint.class);
     private final WebsocketServerEndpointSessionsHandler sessionsHandler;
     private final StreamingResourceManager manager;
+    private final String parameterName;
     // we must use the same reference for registering/unregistering
     private final Consumer<StreamingResourceStatus> statusChangeListener = this::onResourceStatusChanged;
 
@@ -42,9 +43,11 @@ public class WebsocketDownloadEndpoint extends Endpoint {
     private Session session;
     private String resourceId;
 
-    public WebsocketDownloadEndpoint(StreamingResourceManager manager, WebsocketServerEndpointSessionsHandler sessionsHandler) {
+    public WebsocketDownloadEndpoint(StreamingResourceManager manager, WebsocketServerEndpointSessionsHandler sessionsHandler, String parameterName) {
+        DownloadProtocolMessage.initialize();
         this.manager = manager;
         this.sessionsHandler = sessionsHandler;
+        this.parameterName = parameterName;
     }
 
     @Override
@@ -52,7 +55,7 @@ public class WebsocketDownloadEndpoint extends Endpoint {
         this.session = session;
         Optional.ofNullable(sessionsHandler).ifPresent(h -> h.register(session));
         session.addMessageHandler(String.class, this::onMessage);
-        resourceId = session.getPathParameters().get(DEFAULT_PARAMETER_NAME); // FIXME make configurable
+        resourceId = session.getPathParameters().get(parameterName);
         logger.debug("Session opened: {}, resource={}", session.getId(), resourceId);
         manager.registerStatusListener(resourceId, statusChangeListener);
     }

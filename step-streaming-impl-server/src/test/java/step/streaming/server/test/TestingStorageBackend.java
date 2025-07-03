@@ -22,7 +22,7 @@ public class TestingStorageBackend extends FilesystemStreamingResourcesStorageBa
      * Constructs a new testing backend with a unique temporary directory.
      *
      */
-    public TestingStorageBackend(Long flushInterval, boolean paranoidSyncMode) {
+    public TestingStorageBackend(long flushInterval, boolean paranoidSyncMode) {
         super(createTempDirectory(), true, flushInterval, paranoidSyncMode);
         this.tempDirectory = super.baseDirectory;
     }

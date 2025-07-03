@@ -49,7 +49,7 @@ public class StreamingResourceEndpointTests {
         manager = new DefaultStreamingResourceManager(catalogBackend, storageBackend,
                 new DefaultStreamingResourceReferenceMapper(null,
                         WebsocketDownloadEndpoint.DEFAULT_ENDPOINT_URL,
-                        WebsocketDownloadEndpoint.DEFAULT_PARAMETER_PLACEHOLDER)
+                        WebsocketDownloadEndpoint.DEFAULT_PARAMETER_NAME)
         );
     }
 
@@ -76,7 +76,7 @@ public class StreamingResourceEndpointTests {
                 .configurator(new ServerEndpointConfig.Configurator() {
                     @Override
                     public <T> T getEndpointInstance(Class<T> endpointClass) throws InstantiationException {
-                        return endpointClass.cast(new WebsocketDownloadEndpoint(manager, sessionsHandler));
+                        return endpointClass.cast(new WebsocketDownloadEndpoint(manager, sessionsHandler, WebsocketDownloadEndpoint.DEFAULT_PARAMETER_NAME));
                     }
                 })
                 .build();

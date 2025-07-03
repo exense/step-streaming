@@ -16,13 +16,11 @@
         <dependency>
             <groupId>ch.exense.streaming</groupId>
             <artifactId>step-streaming-api-client-upload</artifactId>
-            <version>${project.version}</version>
         </dependency>
 
         <dependency>
             <groupId>ch.exense.streaming</groupId>
             <artifactId>step-streaming-impl-websocket-common</artifactId>
-            <version>${project.version}</version>
         </dependency>
 
         <dependency>

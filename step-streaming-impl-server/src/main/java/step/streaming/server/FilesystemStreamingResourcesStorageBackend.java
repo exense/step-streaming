@@ -19,11 +19,6 @@ import java.util.function.Consumer;
  * so the directory hierarchy better reflects the actual IDs (and omits the minimal hashing overhead).
  * Functionally, there is no difference though.
  * <p>
- * The flush and notify interval (default: 1 second) is an important parameter, as it controls how often
- * incoming data streams will emit events -- which ultimately affects the frequency of status notifications.
- * Note that events will only be emitted if there actually was new data since the last event emission. In other words,
- * events are never emitted at a faster rate than the interval, but may be less frequent when no data arrives.
- * <p>
  * A note on paranoid mode: this enables synchronous writes, where every write is synced to the filesystem immediately.
  * Something like that may be required in Databases for absolute consistency, but it's much less relevant here
  * as long as the final write is guaranteed to sync to the file system.
@@ -35,8 +30,6 @@ import java.util.function.Consumer;
  * We're still providing the flag, but consider it useful only in smaller test scenarios.
  */
 public class FilesystemStreamingResourcesStorageBackend implements StreamingResourcesStorageBackend {
-    public static long DEFAULT_FLUSH_AND_NOTIFY_INTERVAL_MILLIS = 1000;
-
     private static final Logger logger = LoggerFactory.getLogger(FilesystemStreamingResourcesStorageBackend.class);
 
     protected final File baseDirectory;
@@ -49,7 +42,7 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
     }
 
     public FilesystemStreamingResourcesStorageBackend(File baseDirectory, boolean hashIdsBeforeStoring) {
-        this(baseDirectory, hashIdsBeforeStoring, DEFAULT_FLUSH_AND_NOTIFY_INTERVAL_MILLIS, false);
+        this(baseDirectory, hashIdsBeforeStoring, DEFAULT_NOTIFY_INTERVAL_MILLIS, false);
     }
 
     /**

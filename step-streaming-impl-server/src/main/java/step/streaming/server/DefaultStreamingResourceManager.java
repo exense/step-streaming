@@ -40,7 +40,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
 
     @Override
     public String registerNewResource(StreamingResourceMetadata metadata) {
-        String resourceId = catalog.createResourceReference(metadata);
+        String resourceId = catalog.createResource(metadata);
         logger.debug("Created new streaming resource: {}", resourceId);
 
         try {
