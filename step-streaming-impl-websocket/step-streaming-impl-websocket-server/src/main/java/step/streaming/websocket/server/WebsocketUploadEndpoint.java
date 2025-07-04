@@ -6,6 +6,7 @@ import jakarta.websocket.EndpointConfig;
 import jakarta.websocket.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceReference;
 import step.streaming.common.StreamingResourceTransferStatus;
 import step.streaming.data.MD5CalculatingInputStream;
@@ -27,13 +28,13 @@ public class WebsocketUploadEndpoint extends Endpoint {
     }
 
     private static final Logger logger = LoggerFactory.getLogger(WebsocketUploadEndpoint.class);
-    private final StreamingResourceManager manager;
+    protected final StreamingResourceManager manager;
     private final WebsocketServerEndpointSessionsHandler sessionsHandler;
 
-    private Session session;
+    protected Session session;
     private State state;
 
-    private String resourceId;
+    protected String resourceId;
 
     public WebsocketUploadEndpoint(StreamingResourceManager manager, WebsocketServerEndpointSessionsHandler sessionsHandler) {
         UploadProtocolMessage.initialize();
@@ -57,7 +58,8 @@ public class WebsocketUploadEndpoint extends Endpoint {
         }
         UploadClientMessage clientMessage = UploadClientMessage.fromString(messageString);
         if (state == State.EXPECTING_METADATA && clientMessage instanceof RequestUploadStartMessage) {
-            resourceId = manager.registerNewResource(((RequestUploadStartMessage) clientMessage).metadata);
+            StreamingResourceMetadata metadata = ((RequestUploadStartMessage) clientMessage).metadata;
+            resourceId = manager.registerNewResource(metadata);
             StreamingResourceReference reference = manager.getReferenceMapper().resourceIdToReference(resourceId);
             state = State.UPLOADING;
             ReadyForUploadMessage reply = new ReadyForUploadMessage(reference);
@@ -66,9 +68,14 @@ public class WebsocketUploadEndpoint extends Endpoint {
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
+            onUploadReady(metadata, reference);
         } else {
             throw new IllegalArgumentException("Unsupported message in state " + state + ": " + messageString);
         }
+    }
+
+    // Can be overridden if needed. This will be called exactly once.
+    protected void onUploadReady(StreamingResourceMetadata metadata, StreamingResourceReference reference) {
     }
 
     private void onData(InputStream input) {

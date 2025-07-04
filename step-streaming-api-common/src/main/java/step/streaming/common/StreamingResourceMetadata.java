@@ -94,4 +94,12 @@ public class StreamingResourceMetadata {
         /** Generic MIME type for binary data. */
         public static final String APPLICATION_OCTET_STREAM = "application/octet-stream";
     }
+
+    @Override
+    public String toString() {
+        return "StreamingResourceMetadata{" +
+                "filename='" + filename + '\'' +
+                ", mimeType='" + mimeType + '\'' +
+                '}';
+    }
 }
