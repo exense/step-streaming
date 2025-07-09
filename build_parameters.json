@@ -1,0 +1,17 @@
+{
+	"ACTION": "COMPILE",
+	"TYPE": "POM",
+	"FOLDER": ".",
+	"PARAMETERS": [
+		{
+			"NAME": "DEVELOPMENT",
+			"URL": "nexus-staging::https://nexus-enterprise-staging.exense.ch/repository/staging-maven/",
+			"CONFIG": "SkipJavadoc"
+		},
+		{
+			"NAME": "PRODUCTION",
+			"URL": "sonatype::https://obsolete/",
+			"CONFIG": "SignedBuild"
+		}
+	]
+}

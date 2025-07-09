@@ -2,17 +2,17 @@ package step.streaming.server;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import step.streaming.common.StreamingResourceMetadata;
-import step.streaming.common.StreamingResourceStatus;
-import step.streaming.common.StreamingResourceTransferStatus;
+import step.streaming.common.*;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public class DefaultStreamingResourceManager implements StreamingResourceManager {
 
@@ -21,16 +21,31 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     private final StreamingResourcesCatalogBackend catalog;
     private final StreamingResourcesStorageBackend storage;
     private final StreamingResourceReferenceMapper referenceMapper;
+    private final StreamingResourceUploadContexts uploadContexts;
 
     private final Map<String, CopyOnWriteArrayList<Consumer<StreamingResourceStatus>>> statusListeners = new ConcurrentHashMap<>();
+    private final Map<String, String> resourceIdToContextId = new ConcurrentHashMap<>();
 
     public DefaultStreamingResourceManager(StreamingResourcesCatalogBackend catalog,
                                            StreamingResourcesStorageBackend storage,
-                                           StreamingResourceReferenceMapper referenceMapper
+                                           StreamingResourceReferenceMapper referenceMapper,
+                                           StreamingResourceUploadContexts uploadContexts
     ) {
         this.catalog = Objects.requireNonNull(catalog);
         this.storage = Objects.requireNonNull(storage);
         this.referenceMapper = Objects.requireNonNull(referenceMapper);
+        this.uploadContexts = uploadContexts;
+        if (uploadContexts != null) {
+            uploadContexts.registerContextUnregisteredCallback(this::onUploadContextRemoved);
+        }
+    }
+
+    private void onUploadContextRemoved(String uploadContextId) {
+        List<String> keysToRemove = resourceIdToContextId.entrySet().stream()
+                .filter(e -> e.getValue().equals(uploadContextId))
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+        keysToRemove.forEach(resourceIdToContextId::remove);
     }
 
     @Override
@@ -39,14 +54,20 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     }
 
     @Override
-    public String registerNewResource(StreamingResourceMetadata metadata) {
-        String resourceId = catalog.createResource(metadata);
-        logger.debug("Created new streaming resource: {}", resourceId);
+    public String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) {
+        StreamingResourceUploadContext uploadContext = (uploadContextId != null && uploadContexts != null) ? uploadContexts.getContext(uploadContextId) : null;
+        String resourceId = catalog.createResource(metadata, uploadContext);
+        logger.debug("Created new streaming resource: {}, context={}", resourceId, uploadContextId);
 
         try {
             storage.prepareForWrite(resourceId);
         } catch (IOException e) {
             markFailed(resourceId);
+            // FIXME: finalize, this currently falls through to the "success" path
+        }
+        if (uploadContext != null) {
+            uploadContexts.onResourceCreated(uploadContextId, resourceId, metadata);
+            resourceIdToContextId.put(resourceId, uploadContextId);
         }
         StreamingResourceStatus initStatus = new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L);
         catalog.updateStatus(resourceId, initStatus);
@@ -151,6 +172,12 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
                 } catch (Exception e) {
                     logger.error("Status listener unexpectedly threw exception {} on resource {}, status {}", listener, resourceId, status, e);
                 }
+            }
+        }
+        if (uploadContexts != null) {
+            String uploadContextId = resourceIdToContextId.get(resourceId);
+            if (uploadContextId != null) {
+                uploadContexts.onResourceStatusChanged(uploadContextId, resourceId, status);
             }
         }
     }

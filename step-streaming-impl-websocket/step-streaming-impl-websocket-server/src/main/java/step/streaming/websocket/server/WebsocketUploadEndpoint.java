@@ -9,12 +9,14 @@ import org.slf4j.LoggerFactory;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceReference;
 import step.streaming.common.StreamingResourceTransferStatus;
+import step.streaming.common.StreamingResourceUploadContext;
 import step.streaming.data.MD5CalculatingInputStream;
 import step.streaming.server.StreamingResourceManager;
 import step.streaming.websocket.protocol.upload.*;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.Optional;
 
 public class WebsocketUploadEndpoint extends Endpoint {
@@ -35,6 +37,7 @@ public class WebsocketUploadEndpoint extends Endpoint {
     private State state;
 
     protected String resourceId;
+    protected String uploadContextId;
 
     public WebsocketUploadEndpoint(StreamingResourceManager manager, WebsocketServerEndpointSessionsHandler sessionsHandler) {
         UploadProtocolMessage.initialize();
@@ -46,6 +49,9 @@ public class WebsocketUploadEndpoint extends Endpoint {
     public void onOpen(Session session, EndpointConfig config) {
         this.session = session;
         Optional.ofNullable(sessionsHandler).ifPresent(handler -> handler.register(session));
+        session.getRequestParameterMap()
+                .getOrDefault(StreamingResourceUploadContext.PARAMETER_NAME, List.of())
+                .stream().findFirst().ifPresent(ctx -> uploadContextId = ctx);
         state = State.EXPECTING_METADATA;
         session.addMessageHandler(String.class, this::onMessage);
         session.addMessageHandler(InputStream.class, this::onData);
@@ -59,7 +65,7 @@ public class WebsocketUploadEndpoint extends Endpoint {
         UploadClientMessage clientMessage = UploadClientMessage.fromString(messageString);
         if (state == State.EXPECTING_METADATA && clientMessage instanceof RequestUploadStartMessage) {
             StreamingResourceMetadata metadata = ((RequestUploadStartMessage) clientMessage).metadata;
-            resourceId = manager.registerNewResource(metadata);
+            resourceId = manager.registerNewResource(metadata, uploadContextId);
             StreamingResourceReference reference = manager.getReferenceMapper().resourceIdToReference(resourceId);
             state = State.UPLOADING;
             ReadyForUploadMessage reply = new ReadyForUploadMessage(reference);
@@ -68,14 +74,9 @@ public class WebsocketUploadEndpoint extends Endpoint {
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-            onUploadReady(metadata, reference);
         } else {
             throw new IllegalArgumentException("Unsupported message in state " + state + ": " + messageString);
         }
-    }
-
-    // Can be overridden if needed. This will be called exactly once.
-    protected void onUploadReady(StreamingResourceMetadata metadata, StreamingResourceReference reference) {
     }
 
     private void onData(InputStream input) {

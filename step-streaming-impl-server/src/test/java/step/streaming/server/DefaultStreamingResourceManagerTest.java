@@ -26,7 +26,10 @@ public class DefaultStreamingResourceManagerTest {
     public void setUp() throws IOException {
         storageBackend = new TestingStorageBackend(StreamingResourcesStorageBackend.DEFAULT_NOTIFY_INTERVAL_MILLIS, false);
         catalogBackend = new InMemoryCatalogBackend();
-        manager = new DefaultStreamingResourceManager(catalogBackend, storageBackend, new DefaultStreamingResourceReferenceMapper(null, "/{id}", "id"));
+        manager = new DefaultStreamingResourceManager(catalogBackend, storageBackend,
+                new DefaultStreamingResourceReferenceMapper(null, "/{id}", "id"),
+                null
+        );
     }
 
     @After
@@ -60,7 +63,7 @@ public class DefaultStreamingResourceManagerTest {
 
     @Test
     public void testHappyPathUploadWithListeners() throws Exception {
-        final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", "text/plain"));
+        final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", "text/plain"), null);
 
         final List<StreamingResourceStatus> listener1Events = new CopyOnWriteArrayList<>();
         final List<StreamingResourceStatus> listener2Events = new CopyOnWriteArrayList<>();
@@ -112,7 +115,7 @@ public class DefaultStreamingResourceManagerTest {
 
     @Test
     public void testUploadFailsWithIOException() throws Exception {
-        final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", "text/plain"));
+        final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", "text/plain"), null);
 
         final List<StreamingResourceStatus> listenerEvents = new CopyOnWriteArrayList<>();
         manager.registerStatusListener(resourceId, listenerEvents::add);

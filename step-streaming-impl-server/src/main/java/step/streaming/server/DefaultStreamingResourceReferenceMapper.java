@@ -38,7 +38,7 @@ public class DefaultStreamingResourceReferenceMapper implements StreamingResourc
         checkInitialized();
         String path = pathTemplate.replace(placeholder, encodeSegment(resourceId));
         URI uri = baseUri.resolve(path);
-        return new StreamingResourceReference(uri);
+        return new StreamingResourceReference(uri, resourceId);
     }
 
     @Override

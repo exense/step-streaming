@@ -8,6 +8,7 @@ import step.streaming.server.test.TestingStorageBackend;
 
 public class BackendTests {
     TestingStorageBackend storage;
+
     @Before
     public void setup() {
         storage = new TestingStorageBackend(FilesystemStreamingResourcesStorageBackend.DEFAULT_NOTIFY_INTERVAL_MILLIS, false);
@@ -17,10 +18,14 @@ public class BackendTests {
     public void cleanup() {
         storage.cleanup();
     }
+
     @Test
     public void testUploadWithTwoDownloads() throws Exception {
         StreamingResourcesCatalogBackend catalog = new InMemoryCatalogBackend();
-        StreamingResourceManager manager = new DefaultStreamingResourceManager(catalog, storage, new DefaultStreamingResourceReferenceMapper(null, "/{id}", "id"));
+        StreamingResourceManager manager = new DefaultStreamingResourceManager(catalog, storage,
+                new DefaultStreamingResourceReferenceMapper(null, "/{id}", "id"),
+                null
+        );
         storage.cleanup();
     }
 }

@@ -3,6 +3,7 @@ package step.streaming.server.test;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
+import step.streaming.common.StreamingResourceUploadContext;
 import step.streaming.server.StreamingResourcesCatalogBackend;
 
 import java.io.IOException;
@@ -28,7 +29,7 @@ public class InMemoryCatalogBackend implements StreamingResourcesCatalogBackend 
     private final Map<String, CatalogEntry> catalog = new ConcurrentHashMap<>();
 
     @Override
-    public String createResource(StreamingResourceMetadata metadata) {
+    public String createResource(StreamingResourceMetadata metadata, StreamingResourceUploadContext uploadContext) {
         String resourceId = UUID.randomUUID().toString();
         catalog.put(resourceId, new CatalogEntry(
                 metadata.getFilename(),

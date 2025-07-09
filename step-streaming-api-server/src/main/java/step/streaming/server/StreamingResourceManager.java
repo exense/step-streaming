@@ -12,7 +12,7 @@ import java.util.function.Consumer;
  */
 public interface StreamingResourceManager {
 
-    String registerNewResource(StreamingResourceMetadata metadata);
+    String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId);
 
     long writeChunk(String resourceId, InputStream input) throws IOException;
 

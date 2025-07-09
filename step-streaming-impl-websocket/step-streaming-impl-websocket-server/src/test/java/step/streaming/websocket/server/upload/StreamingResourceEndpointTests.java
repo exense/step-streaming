@@ -49,7 +49,8 @@ public class StreamingResourceEndpointTests {
         manager = new DefaultStreamingResourceManager(catalogBackend, storageBackend,
                 new DefaultStreamingResourceReferenceMapper(null,
                         WebsocketDownloadEndpoint.DEFAULT_ENDPOINT_URL,
-                        WebsocketDownloadEndpoint.DEFAULT_PARAMETER_NAME)
+                        WebsocketDownloadEndpoint.DEFAULT_PARAMETER_NAME),
+                null
         );
     }
 
