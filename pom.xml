@@ -11,7 +11,7 @@
 
 	<!-- required metadata for maven central -->
 	<name>${project.groupId}:${project.artifactId}</name>
-	<description>Step Enterprise is the Enterprise version of Step, the open-source automation platform for unified agile testing.</description>
+	<description>Step streaming uploads/downloads API and partial implementation</description>
 	<url>https://step.exense.ch</url>
 
 	<licenses>

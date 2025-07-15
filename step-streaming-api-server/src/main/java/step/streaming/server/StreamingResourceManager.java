@@ -1,6 +1,7 @@
 package step.streaming.server;
 
 import step.streaming.common.StreamingResourceMetadata;
+import step.streaming.common.StreamingResourceReference;
 import step.streaming.common.StreamingResourceStatus;
 
 import java.io.IOException;
@@ -12,7 +13,7 @@ import java.util.function.Consumer;
  */
 public interface StreamingResourceManager {
 
-    String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId);
+    String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) throws IOException;
 
     long writeChunk(String resourceId, InputStream input) throws IOException;
 
@@ -28,5 +29,5 @@ public interface StreamingResourceManager {
 
     void unregisterStatusListener(String resourceId, Consumer<StreamingResourceStatus> listener);
 
-    StreamingResourceReferenceMapper getReferenceMapper();
+    StreamingResourceReference getReferenceFor(String resourceId);
 }

@@ -16,7 +16,7 @@ import step.streaming.data.CheckpointingOutputStream;
 import step.streaming.data.MD5CalculatingInputStream;
 import step.streaming.data.MD5CalculatingOutputStream;
 import step.streaming.server.DefaultStreamingResourceManager;
-import step.streaming.server.DefaultStreamingResourceReferenceMapper;
+import step.streaming.server.URITemplateBasedReferenceProducer;
 import step.streaming.server.test.InMemoryCatalogBackend;
 import step.streaming.server.test.TestingStorageBackend;
 import step.streaming.websocket.client.upload.WebsocketUpload;
@@ -27,10 +27,13 @@ import step.streaming.websocket.server.WebsocketDownloadEndpoint;
 import step.streaming.websocket.server.WebsocketServerEndpointSessionsHandler;
 import step.streaming.websocket.server.WebsocketUploadEndpoint;
 import step.streaming.websocket.test.TestingWebsocketServer;
-import step.streaming.websocket.test.TricklingBytesInputStream;
+import step.streaming.websocket.test.TricklingDelegatingInputStream;
+import step.streaming.websocket.test.TricklingRandomBytesInputStream;
 
 import java.io.*;
 import java.net.URI;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -40,16 +43,16 @@ public class StreamingResourceEndpointTests {
     private InMemoryCatalogBackend catalogBackend;
     private DefaultStreamingResourceManager manager;
     private WebsocketServerEndpointSessionsHandler sessionsHandler;
+    private URITemplateBasedReferenceProducer referenceProducer;
 
     @Before
     public void setUp() throws IOException {
         sessionsHandler = DefaultWebsocketServerEndpointSessionsHandler.getInstance();
         storageBackend = new TestingStorageBackend(1000L, false);
         catalogBackend = new InMemoryCatalogBackend();
+        referenceProducer = new URITemplateBasedReferenceProducer(null, WebsocketDownloadEndpoint.DEFAULT_ENDPOINT_URL, WebsocketDownloadEndpoint.DEFAULT_PARAMETER_NAME);
         manager = new DefaultStreamingResourceManager(catalogBackend, storageBackend,
-                new DefaultStreamingResourceReferenceMapper(null,
-                        WebsocketDownloadEndpoint.DEFAULT_ENDPOINT_URL,
-                        WebsocketDownloadEndpoint.DEFAULT_PARAMETER_NAME),
+                referenceProducer,
                 null
         );
     }
@@ -87,7 +90,7 @@ public class StreamingResourceEndpointTests {
     public void testLowLevelUploadFollowedByOneShotDownload() throws Exception {
         long DATA_SIZE = 500_000L;
         TestingWebsocketServer server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
-        ((DefaultStreamingResourceReferenceMapper) manager.getReferenceMapper()).setBaseUri(server.getURI());
+        referenceProducer.setBaseUri(server.getURI());
         URI uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
 
         StreamingResourceMetadata metadata = new StreamingResourceMetadata("test.txt", StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN);
@@ -95,7 +98,7 @@ public class StreamingResourceEndpointTests {
         // TODO: timeout
         //WebsocketUploadClient uploadClient = new WebsocketUploadClient(uploadUri, upload, ContainerProvider.getWebSocketContainer(), 200, 10);
         WebsocketUploadClient uploadClient = new WebsocketUploadClient(uploadUri, upload);
-        InputStream data = new TricklingBytesInputStream(DATA_SIZE, 5, TimeUnit.SECONDS);
+        InputStream data = new TricklingRandomBytesInputStream(DATA_SIZE, 5, TimeUnit.SECONDS);
 
         WebsocketDownloadClient downloadClient = new WebsocketDownloadClient(upload.getReference().getUri());
         //downloadClient.registerStatusListener(status -> System.err.println("download client status: " + status));
@@ -117,16 +120,39 @@ public class StreamingResourceEndpointTests {
         server.stop();
     }
 
-    private static class DataProducer {
+    private static class RandomBytesProducer {
         File file;
         final InputStream input;
         final MD5CalculatingOutputStream output;
         String checksum;
 
-        public DataProducer(long bytes, long duration, TimeUnit durationUnit) throws Exception {
+        public RandomBytesProducer(long bytesCount, long duration, TimeUnit durationUnit) throws Exception {
             file = File.createTempFile("streaming-upload-test", ".tmp");
             file.deleteOnExit();
-            input = new TricklingBytesInputStream(bytes, duration, durationUnit);
+            input = new TricklingRandomBytesInputStream(bytesCount, duration, durationUnit);
+            output = new MD5CalculatingOutputStream(new FileOutputStream(file));
+        }
+
+        // synchronous and blocking
+        public long produce() throws Exception {
+            long transferred = input.transferTo(output);
+            input.close();
+            output.close();
+            checksum = output.getChecksum();
+            return transferred;
+        }
+    }
+
+    private static class FileBytesProducer {
+        File file;
+        final InputStream input;
+        final MD5CalculatingOutputStream output;
+        String checksum;
+
+        public FileBytesProducer(File sourceFile, long duration, TimeUnit durationUnit) throws Exception {
+            file = File.createTempFile("streaming-upload-test", ".tmp");
+            file.deleteOnExit();
+            input = new TricklingDelegatingInputStream(new FileInputStream(sourceFile), sourceFile.length(), duration, durationUnit);
             output = new MD5CalculatingOutputStream(new FileOutputStream(file));
         }
 
@@ -142,16 +168,16 @@ public class StreamingResourceEndpointTests {
 
 
     @Test
-    public void testHighLevelUploadWithSimultaneousDownloads() throws Exception {
+    public void testHighLevelUploadWithSimultaneousDownloadsRandomData() throws Exception {
         long DATA_SIZE = 200_000_000L;
-        DataProducer dataProducer = new DataProducer(DATA_SIZE, 5, TimeUnit.SECONDS);
+        RandomBytesProducer randomBytesProducer = new RandomBytesProducer(DATA_SIZE, 5, TimeUnit.SECONDS);
 
         TestingWebsocketServer server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
         URI uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
-        ((DefaultStreamingResourceReferenceMapper) manager.getReferenceMapper()).setBaseUri(server.getURI());
+        referenceProducer.setBaseUri(server.getURI());
 
         WebsocketUploadProvider provider = new WebsocketUploadProvider(uploadUri);
-        StreamingUpload upload = provider.startLiveFileUpload(dataProducer.file, new StreamingResourceMetadata("test.txt", StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN));
+        StreamingUpload upload = provider.startLiveBinaryFileUpload(randomBytesProducer.file, new StreamingResourceMetadata("test.bin", StreamingResourceMetadata.CommonMimeTypes.APPLICATION_OCTET_STREAM));
         WebsocketDownload download = new WebsocketDownload(upload.getReference());
         AtomicReference<String> downloadChecksum = new AtomicReference<>();
         Thread downloadThread = new Thread(() -> {
@@ -169,21 +195,76 @@ public class StreamingResourceEndpointTests {
             }
         });
         downloadThread.start();
-        Assert.assertEquals(DATA_SIZE, dataProducer.produce());
-        Assert.assertEquals(DATA_SIZE, dataProducer.file.length());
+        Assert.assertEquals(DATA_SIZE, randomBytesProducer.produce());
+        Assert.assertEquals(DATA_SIZE, randomBytesProducer.file.length());
         logger.info("UPLOAD FINAL STATUS: {}", upload.signalEndOfInput().get());
         upload.close(); // optional
         downloadThread.join();
-        Assert.assertEquals(dataProducer.checksum, downloadChecksum.get());
+        Assert.assertEquals(randomBytesProducer.checksum, downloadChecksum.get());
         // do another transfer, this time of the finished file
         MD5CalculatingOutputStream md5Out = new MD5CalculatingOutputStream(OutputStream.nullOutputStream());
         long again = download.getInputStream().transferTo(md5Out);
         Assert.assertEquals(DATA_SIZE, again);
         md5Out.close();
-        Assert.assertEquals(dataProducer.checksum, md5Out.getChecksum());
+        Assert.assertEquals(randomBytesProducer.checksum, md5Out.getChecksum());
         download.close();
         Thread.sleep(50);
         sessionsHandler.shutdown();
         server.stop();
     }
+
+    @Test
+    public void testHighLevelUploadWithSimultaneousDownloadsWithTextConversion() throws Exception {
+        URL url = Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt");
+        File sourceFile = new File(url.toURI());
+        long INPUT_DATA_SIZE = 10171; // in ISO-8859-1 format
+        String INPUT_CHECKSUM = "317c7a8df8c817c80bf079cfcbbc6686";
+        long OUTPUT_DATA_SIZE = 10324; // in UTF-8 format, i.e. what is expected to arrive server-side
+        String OUTPUT_CHECKSUM = "540441d13a31641d7775d91c46c94511";
+        FileBytesProducer isoBytesProducer = new FileBytesProducer(sourceFile, 5, TimeUnit.SECONDS);
+
+        TestingWebsocketServer server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
+        URI uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
+        referenceProducer.setBaseUri(server.getURI());
+
+        WebsocketUploadProvider provider = new WebsocketUploadProvider(uploadUri);
+        // This will transcode the file to UTF-8 on upload (on the fly)
+        StreamingUpload upload = provider.startLiveTextFileUpload(isoBytesProducer.file, new StreamingResourceMetadata("faust.txt", StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN), StandardCharsets.ISO_8859_1);
+        WebsocketDownload download = new WebsocketDownload(upload.getReference());
+        AtomicReference<String> downloadChecksum = new AtomicReference<>();
+        Thread downloadThread = new Thread(() -> {
+            try (
+                    CheckpointingOutputStream out = new CheckpointingOutputStream(OutputStream.nullOutputStream(), 500, read ->
+                            logger.info("Download status: {} bytes currently transferred", read));
+                    MD5CalculatingInputStream downloadStream = new MD5CalculatingInputStream(download.getInputStream());
+            ) {
+                long downloadSize = downloadStream.transferTo(out);
+                downloadStream.close();
+                downloadChecksum.set(downloadStream.getChecksum());
+                logger.info("Final download size={}, checksum={}", downloadSize, downloadChecksum.get());
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+        downloadThread.start();
+        Assert.assertEquals(INPUT_DATA_SIZE, isoBytesProducer.produce());
+        Assert.assertEquals(INPUT_DATA_SIZE, isoBytesProducer.file.length());
+        logger.info("UPLOAD FINAL STATUS: {}", upload.signalEndOfInput().get());
+        upload.close(); // optional
+        downloadThread.join();
+        Assert.assertEquals(INPUT_CHECKSUM, isoBytesProducer.checksum);
+        Assert.assertEquals(OUTPUT_CHECKSUM, downloadChecksum.get());
+
+        // do another transfer, this time of the finished file
+        MD5CalculatingOutputStream md5Out = new MD5CalculatingOutputStream(OutputStream.nullOutputStream());
+        long again = download.getInputStream().transferTo(md5Out);
+        Assert.assertEquals(OUTPUT_DATA_SIZE, again);
+        md5Out.close();
+        Assert.assertEquals(OUTPUT_CHECKSUM, md5Out.getChecksum());
+        download.close();
+        Thread.sleep(50);
+        sessionsHandler.shutdown();
+        server.stop();
+    }
+
 }

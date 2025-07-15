@@ -10,18 +10,18 @@ import java.io.OutputStream;
 import java.util.concurrent.TimeUnit;
 
 @SuppressWarnings("resource")
-public class TricklingBytesInputStreamTest {
+public class TricklingRandomBytesInputStreamTest {
 
     @Test
     public void testQuick() throws Exception {
-        InputStream in = new TricklingBytesInputStream(100, 500, TimeUnit.MILLISECONDS);
+        InputStream in = new TricklingRandomBytesInputStream(100, 500, TimeUnit.MILLISECONDS);
         Assert.assertEquals(100, in.transferTo(OutputStream.nullOutputStream()));
     }
 
     @Test
     public void testSlow() throws Exception {
         long start = System.currentTimeMillis();
-        InputStream in = new TricklingBytesInputStream(1024 * 1024, 5, TimeUnit.SECONDS);
+        InputStream in = new TricklingRandomBytesInputStream(1024 * 1024, 5, TimeUnit.SECONDS);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         CheckpointingOutputStream out2 = new CheckpointingOutputStream(out, 1000, System.err::println);
         in.transferTo(out2);

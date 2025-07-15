@@ -31,6 +31,7 @@ public class FileChunk {
      *
      * @param file          the file to write to
      * @param startPosition the position to begin writing
+     * @param paranoidSync  flag to indicate if whether writes have to be synced immediately. Not recommended for production unless you know why, as it severely affects performance.
      * @return a {@link FileChunkOutputStream}
      * @throws IOException if the file cannot be opened or the position is invalid
      */

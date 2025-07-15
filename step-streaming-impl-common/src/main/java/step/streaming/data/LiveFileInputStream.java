@@ -7,9 +7,6 @@ import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
-// Provides an InputStream over a file that is (potentially) still growing.
-// This stream will behave like a normal InputStream, except that
-// it will NOT signal EOF when the end of the file is reached.
 /**
  * An {@link java.io.InputStream} implementation that reads from a file which may still be growing.
  * <p>

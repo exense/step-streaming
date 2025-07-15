@@ -84,15 +84,21 @@ public class StreamingResourceMetadata {
     /**
      * Common MIME type constants.
      */
+    @SuppressWarnings("unused")
     public static class CommonMimeTypes {
         /** MIME type for plain text. */
         public static final String TEXT_PLAIN = "text/plain";
+
+        /** MIME type for HTML text. */
+        public static final String TEXT_HTML = "text/html";
 
         /** MIME type for JSON documents. */
         public static final String APPLICATION_JSON = "application/json";
 
         /** Generic MIME type for binary data. */
         public static final String APPLICATION_OCTET_STREAM = "application/octet-stream";
+
+        private CommonMimeTypes() {} //utility class
     }
 
     @Override

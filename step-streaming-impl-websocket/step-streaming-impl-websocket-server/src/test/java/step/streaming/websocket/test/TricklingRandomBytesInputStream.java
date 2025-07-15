@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit;
  * Useful for simulating slow uploads or trickle streams with non-zero content.
  */
 @SuppressWarnings("NullableProblems")
-public class TricklingBytesInputStream extends InputStream {
+public class TricklingRandomBytesInputStream extends InputStream {
 
     private final long totalBytes;
     private final long durationMillis;
@@ -20,25 +20,25 @@ public class TricklingBytesInputStream extends InputStream {
     private long bytesEmitted = 0;
 
     /**
-     * Constructs a TricklingBytesInputStream with a default random generator.
+     * Constructs a TricklingRandomBytesInputStream with a default random generator.
      *
      * @param totalBytes the total number of bytes to emit
      * @param duration   the total duration over which the bytes should be emitted
      * @param timeUnit   the time unit for the duration
      */
-    public TricklingBytesInputStream(long totalBytes, long duration, TimeUnit timeUnit) {
+    public TricklingRandomBytesInputStream(long totalBytes, long duration, TimeUnit timeUnit) {
         this(totalBytes, duration, timeUnit, new Random());
     }
 
     /**
-     * Constructs a TricklingBytesInputStream with a specific Random generator.
+     * Constructs a TricklingRandomBytesInputStream with a specific Random generator.
      *
      * @param totalBytes the total number of bytes to emit
      * @param duration   the total duration over which the bytes should be emitted
      * @param timeUnit   the time unit for the duration
      * @param random     the Random instance used to generate byte content
      */
-    public TricklingBytesInputStream(long totalBytes, long duration, TimeUnit timeUnit, Random random) {
+    public TricklingRandomBytesInputStream(long totalBytes, long duration, TimeUnit timeUnit, Random random) {
         if (totalBytes < 0) throw new IllegalArgumentException("totalBytes must be >= 0");
         if (duration < 0) throw new IllegalArgumentException("duration must be >= 0");
 

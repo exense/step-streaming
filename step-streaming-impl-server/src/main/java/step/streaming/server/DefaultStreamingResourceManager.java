@@ -12,6 +12,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class DefaultStreamingResourceManager implements StreamingResourceManager {
@@ -20,41 +21,30 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
 
     private final StreamingResourcesCatalogBackend catalog;
     private final StreamingResourcesStorageBackend storage;
-    private final StreamingResourceReferenceMapper referenceMapper;
     private final StreamingResourceUploadContexts uploadContexts;
+    private final Function<String, StreamingResourceReference> referenceProducerFunction;
 
+    // Listeners interested in a single resource (e.g. download clients)
     private final Map<String, CopyOnWriteArrayList<Consumer<StreamingResourceStatus>>> statusListeners = new ConcurrentHashMap<>();
-    private final Map<String, String> resourceIdToContextId = new ConcurrentHashMap<>();
 
     public DefaultStreamingResourceManager(StreamingResourcesCatalogBackend catalog,
                                            StreamingResourcesStorageBackend storage,
-                                           StreamingResourceReferenceMapper referenceMapper,
+                                           Function<String, StreamingResourceReference> referenceProducerFunction,
                                            StreamingResourceUploadContexts uploadContexts
     ) {
         this.catalog = Objects.requireNonNull(catalog);
         this.storage = Objects.requireNonNull(storage);
-        this.referenceMapper = Objects.requireNonNull(referenceMapper);
+        this.referenceProducerFunction = Objects.requireNonNull(referenceProducerFunction);
         this.uploadContexts = uploadContexts;
-        if (uploadContexts != null) {
-            uploadContexts.registerContextUnregisteredCallback(this::onUploadContextRemoved);
-        }
-    }
-
-    private void onUploadContextRemoved(String uploadContextId) {
-        List<String> keysToRemove = resourceIdToContextId.entrySet().stream()
-                .filter(e -> e.getValue().equals(uploadContextId))
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toList());
-        keysToRemove.forEach(resourceIdToContextId::remove);
     }
 
     @Override
-    public StreamingResourceReferenceMapper getReferenceMapper() {
-        return referenceMapper;
+    public StreamingResourceReference getReferenceFor(String resourceId) {
+        return referenceProducerFunction.apply(resourceId);
     }
 
     @Override
-    public String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) {
+    public String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) throws IOException{
         StreamingResourceUploadContext uploadContext = (uploadContextId != null && uploadContexts != null) ? uploadContexts.getContext(uploadContextId) : null;
         String resourceId = catalog.createResource(metadata, uploadContext);
         logger.debug("Created new streaming resource: {}, context={}", resourceId, uploadContextId);
@@ -63,11 +53,11 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
             storage.prepareForWrite(resourceId);
         } catch (IOException e) {
             markFailed(resourceId);
-            // FIXME: finalize, this currently falls through to the "success" path
+            logger.error("Storage backend failed to prepare resource {} for writing", resourceId, e);
+            throw e;
         }
         if (uploadContext != null) {
             uploadContexts.onResourceCreated(uploadContextId, resourceId, metadata);
-            resourceIdToContextId.put(resourceId, uploadContextId);
         }
         StreamingResourceStatus initStatus = new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L);
         catalog.updateStatus(resourceId, initStatus);
@@ -118,9 +108,8 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
         StreamingResourceStatus status = new StreamingResourceStatus(
                 StreamingResourceTransferStatus.FAILED, null
         );
-
-        logger.warn("Resource marked FAILED: {}", resourceId);
         catalog.updateStatus(resourceId, status);
+        logger.warn("Resource marked FAILED: {}", resourceId);
         emitStatus(resourceId, status);
     }
 
@@ -175,7 +164,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
             }
         }
         if (uploadContexts != null) {
-            String uploadContextId = resourceIdToContextId.get(resourceId);
+            String uploadContextId = uploadContexts.getContextIdForResourceId(resourceId);
             if (uploadContextId != null) {
                 uploadContexts.onResourceStatusChanged(uploadContextId, resourceId, status);
             }

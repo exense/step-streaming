@@ -65,13 +65,14 @@ public class WebsocketUploadEndpoint extends Endpoint {
         UploadClientMessage clientMessage = UploadClientMessage.fromString(messageString);
         if (state == State.EXPECTING_METADATA && clientMessage instanceof RequestUploadStartMessage) {
             StreamingResourceMetadata metadata = ((RequestUploadStartMessage) clientMessage).metadata;
-            resourceId = manager.registerNewResource(metadata, uploadContextId);
-            StreamingResourceReference reference = manager.getReferenceMapper().resourceIdToReference(resourceId);
-            state = State.UPLOADING;
-            ReadyForUploadMessage reply = new ReadyForUploadMessage(reference);
             try {
+                resourceId = manager.registerNewResource(metadata, uploadContextId);
+                StreamingResourceReference reference = manager.getReferenceFor(resourceId);
+                state = State.UPLOADING;
+                ReadyForUploadMessage reply = new ReadyForUploadMessage(reference);
                 session.getBasicRemote().sendText(reply.toString());
             } catch (IOException e) {
+                // this will implicitly activate error handling, close the session etc.
                 throw new RuntimeException(e);
             }
         } else {

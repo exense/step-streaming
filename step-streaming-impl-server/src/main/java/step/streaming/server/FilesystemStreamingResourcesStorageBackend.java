@@ -121,7 +121,7 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
     }
 
     /**
-     * Deletes the file associated with a failed upload.
+     * Handles a failed upload. This implementation deletes any files associated with the given resource ID.
      *
      * @param resourceId the failed resource
      */
