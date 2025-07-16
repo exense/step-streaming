@@ -46,6 +46,7 @@ public class UTF8TranscodingTextInputStreamTests {
     public void testEmptyInput() throws Exception {
         InputStream in = new UTF8TranscodingTextInputStream(new ByteArrayInputStream(new byte[0]), StandardCharsets.UTF_8);
         String result = readAll(in);
+        in.close();
         assertEquals("", result);
     }
 
@@ -124,6 +125,7 @@ public class UTF8TranscodingTextInputStreamTests {
         };
         InputStream in = new UTF8TranscodingTextInputStream(new ByteArrayInputStream(bomUtf16BE), StandardCharsets.UTF_16BE);
         String result = readAll(in);
+        in.close();
         assertEquals("Hi", result);
     }
 

@@ -11,7 +11,8 @@ import java.util.Objects;
 
 /**
  * An InputStream that reads character data from an underlying source using a declared charset,
- * transcodes it into UTF-8, and returns the resulting bytes on-demand.
+ * transcodes it into UTF-8, and returns the resulting bytes on-demand. If the source is
+ * already in UTF-8 format, no transcoding is required and the source is used directly.
  * <p>
  * BOMs (Byte Order Marks) are explicitly detected and validated against the declared charset.
  * The stream emits no BOM in the output and supports partial, lazy consumption from slow or trickling sources.
@@ -19,14 +20,17 @@ import java.util.Objects;
 @SuppressWarnings("NullableProblems")
 public class UTF8TranscodingTextInputStream extends InputStream {
 
-    private final InputStream sourceStream;
+    private InputStream sourceStream;
     private final Charset declaredCharset;
     private final CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder()
             .onMalformedInput(CodingErrorAction.REPLACE)
             .onUnmappableCharacter(CodingErrorAction.REPLACE);
 
-    private final CharBuffer charBuffer = CharBuffer.allocate(2048);
-    private final ByteBuffer byteBuffer = ByteBuffer.allocate(4096);
+    private final CharBuffer charBuffer = CharBuffer.allocate(1024);
+    private final ByteBuffer byteBuffer = ByteBuffer.allocate(2048);
+
+    private boolean passthrough = false;
+
 
     private Reader reader;
     private boolean endOfInputReached = false;
@@ -115,6 +119,14 @@ public class UTF8TranscodingTextInputStream extends InputStream {
             if (read > skip) {
                 pushback.unread(bom, skip, read - skip);
             }
+
+            // Optimization: if source is already UTF-8, directly passthrough instead of transcoding
+            if (actualCharset.equals(StandardCharsets.UTF_8)) {
+                passthrough = true;
+                sourceStream = pushback;
+                initialized = true;
+                return;
+            }
         }
 
         reader = new InputStreamReader(pushback, actualCharset);
@@ -137,6 +149,9 @@ public class UTF8TranscodingTextInputStream extends InputStream {
 
         // Ensure stream is initialized (BOM checked, reader created, buffers allocated)
         initialize();
+        if (passthrough) {
+            return sourceStream.read(outputBytes, outputOffset, outputLength);
+        }
 
         int totalWritten = 0;
 

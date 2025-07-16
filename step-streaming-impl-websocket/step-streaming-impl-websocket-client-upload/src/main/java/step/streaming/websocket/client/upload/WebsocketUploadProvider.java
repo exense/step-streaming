@@ -3,6 +3,7 @@ package step.streaming.websocket.client.upload;
 import step.streaming.client.upload.StreamingUpload;
 import step.streaming.client.upload.StreamingUploadProvider;
 import step.streaming.common.StreamingResourceMetadata;
+import step.streaming.data.ClampedReadInputStream;
 import step.streaming.data.LiveFileInputStream;
 
 import java.io.File;
@@ -66,7 +67,7 @@ public class WebsocketUploadProvider implements StreamingUploadProvider {
         WebsocketUpload upload = new WebsocketUpload(Objects.requireNonNull(metadata), endOfInputSignal);
         WebsocketUploadClient client = new WebsocketUploadClient(endpointUri, upload);
         InputStream uploadInputStream = convertFromCharset == null ? liveInputStream : new UTF8TranscodingTextInputStream(liveInputStream, convertFromCharset);
-        executorService.execute(() -> client.performUpload(uploadInputStream));
+        executorService.execute(() -> client.performUpload(new ClampedReadInputStream(uploadInputStream)));
         return upload;
     }
 
