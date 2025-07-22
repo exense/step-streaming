@@ -12,7 +12,8 @@ import java.util.Objects;
 public class StreamingResourceStatus {
 
     private StreamingResourceTransferStatus transferStatus;
-    private Long currentSize;
+    private long currentSize;
+    private Long numberOfLines;
 
     /**
      * Default constructor for serialization/deserialization.
@@ -21,15 +22,17 @@ public class StreamingResourceStatus {
     }
 
     /**
-     * Constructs a new {@code StreamingResourceStatus} with the specified transfer status and current size.
+     * Constructs a new {@code StreamingResourceStatus} with the specified transfer status and size/ lines information.
      *
      * @param transferStatus the transfer status (must not be null)
-     * @param currentSize    the current size of the resource, or {@code null} if transfer failed
+     * @param currentSize    the current size of the resource
+     * @param numberOfLines    the current number of lines, if applicable
      * @throws NullPointerException if {@code transferStatus} is null
      */
-    public StreamingResourceStatus(StreamingResourceTransferStatus transferStatus, Long currentSize) {
+    public StreamingResourceStatus(StreamingResourceTransferStatus transferStatus, long currentSize, Long numberOfLines) {
         this.transferStatus = Objects.requireNonNull(transferStatus, "Transfer status must not be null");
         this.currentSize = currentSize;
+        this.numberOfLines = numberOfLines;
     }
 
     /**
@@ -52,9 +55,9 @@ public class StreamingResourceStatus {
     }
 
     /**
-     * Returns the current size of the resource in bytes, or {@code null} if unknown.
+     * Returns the current size of the resource in bytes
      *
-     * @return the current size or {@code null}
+     * @return the current size
      */
     public Long getCurrentSize() {
         return currentSize;
@@ -63,10 +66,28 @@ public class StreamingResourceStatus {
     /**
      * Sets the current size of the resource.
      *
-     * @param currentSize the size in bytes, or {@code null} if unknown
+     * @param currentSize the size in bytes
      */
-    public void setCurrentSize(Long currentSize) {
+    public void setCurrentSize(long currentSize) {
         this.currentSize = currentSize;
+    }
+
+    /**
+     * Returns the current lines count, or null if not applicable
+     *
+     * @return the lines count (could be null)
+     */
+    public Long getNumberOfLines() {
+        return numberOfLines;
+    }
+
+    /**
+     * Sets the current lines count of the resource
+     *
+     * @param numberOfLines the number of lines
+     */
+    public void setNumberOfLines(Long numberOfLines) {
+        this.numberOfLines = numberOfLines;
     }
 
     @Override
@@ -74,6 +95,7 @@ public class StreamingResourceStatus {
         return "StreamingResourceStatus{" +
                 "transferStatus=" + transferStatus +
                 ", currentSize=" + currentSize +
+                ", numberOfLines=" + numberOfLines +
                 '}';
     }
 
@@ -81,12 +103,11 @@ public class StreamingResourceStatus {
     public boolean equals(Object o) {
         if (!(o instanceof StreamingResourceStatus)) return false;
         StreamingResourceStatus that = (StreamingResourceStatus) o;
-        return transferStatus == that.transferStatus &&
-                Objects.equals(currentSize, that.currentSize);
+        return currentSize == that.currentSize && transferStatus == that.transferStatus && Objects.equals(numberOfLines, that.numberOfLines);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(transferStatus, currentSize);
+        return Objects.hash(transferStatus, currentSize, numberOfLines);
     }
 }

@@ -4,6 +4,7 @@ import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
 import step.streaming.common.StreamingResourceUploadContext;
+import step.streaming.server.StreamingResourceStatusUpdate;
 import step.streaming.server.StreamingResourcesCatalogBackend;
 
 import java.io.IOException;
@@ -34,18 +35,19 @@ public class InMemoryCatalogBackend implements StreamingResourcesCatalogBackend 
         catalog.put(resourceId, new CatalogEntry(
                 metadata.getFilename(),
                 metadata.getMimeType(),
-                new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L)
+                new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L, metadata.getSupportsLineAccess() ? 0L: null)
         ));
         return resourceId;
     }
 
     @Override
-    public void updateStatus(String resourceId, StreamingResourceStatus status) {
+    public StreamingResourceStatus updateStatus(String resourceId, StreamingResourceStatusUpdate statusUpdate) {
         CatalogEntry entry = catalog.get(resourceId);
         if (entry == null) {
             throw new IllegalArgumentException("Resource ID not found: " + resourceId);
         }
-        entry.status = status;
+        entry.status = statusUpdate.applyTo(entry.status);
+        return entry.status;
     }
 
     @Override

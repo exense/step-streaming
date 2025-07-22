@@ -22,9 +22,9 @@ public interface StreamingResourcesCatalogBackend {
      * Updates the current transfer status and size of the resource.
      *
      * @param resourceId internal resource identifier
-     * @param status     the updated status object
+     * @param statusUpdate the update to perform on the object
      */
-    void updateStatus(String resourceId, StreamingResourceStatus status);
+    StreamingResourceStatus updateStatus(String resourceId, StreamingResourceStatusUpdate statusUpdate);
 
     /**
      * Retrieves the current status of the resource.

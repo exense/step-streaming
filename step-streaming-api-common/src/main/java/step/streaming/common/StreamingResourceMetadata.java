@@ -13,6 +13,7 @@ public class StreamingResourceMetadata {
 
     private String filename;
     private String mimeType;
+    private boolean supportsLineAccess;
 
     /**
      * Regular expression used to validate MIME types of the form "type/subtype",
@@ -28,16 +29,18 @@ public class StreamingResourceMetadata {
 
     /**
      * Constructs a {@code StreamingResourceMetadata} with the given filename and MIME type.
-     * Validates the MIME type format upon construction.
+     * Validates the MIME type format upon construction. Line access support will automatically
+     * be determined by the MIME type given (though it may later be overridden)
      *
      * @param filename the name of the file (must not be {@code null})
      * @param mimeType the MIME type of the file (must match {@link #MIME_TYPE_PATTERN})
      * @throws NullPointerException     if filename is {@code null}
-     * @throws IllegalArgumentException if MIME type is {@code null} or invalid
+     * @throws IllegalArgumentException if MIME type is {@code null} or invalid, or filename is empty
      */
     public StreamingResourceMetadata(String filename, String mimeType) {
         setFilename(filename);
         setMimeType(mimeType);
+        setSupportsLineAccess(mimeType.toLowerCase().startsWith("text/"));
     }
 
     /**
@@ -54,9 +57,13 @@ public class StreamingResourceMetadata {
      *
      * @param filename the filename to set (must not be {@code null})
      * @throws NullPointerException if filename is {@code null}
+     * @throws IllegalArgumentException if filename is empty
      */
     public void setFilename(String filename) {
         this.filename = Objects.requireNonNull(filename, "Filename must not be null");
+        if (filename.isEmpty()) {
+            throw new IllegalArgumentException("Filename must not be empty");
+        }
     }
 
     /**
@@ -79,6 +86,14 @@ public class StreamingResourceMetadata {
             throw new IllegalArgumentException("Invalid MIME type format: " + mimeType);
         }
         this.mimeType = mimeType;
+    }
+
+    public boolean getSupportsLineAccess() {
+        return supportsLineAccess;
+    }
+
+    public void setSupportsLineAccess(boolean supportsLineAccess) {
+        this.supportsLineAccess = supportsLineAccess;
     }
 
     /**
@@ -106,6 +121,7 @@ public class StreamingResourceMetadata {
         return "StreamingResourceMetadata{" +
                 "filename='" + filename + '\'' +
                 ", mimeType='" + mimeType + '\'' +
+                ", supportsLineAccess=" + supportsLineAccess +
                 '}';
     }
 }

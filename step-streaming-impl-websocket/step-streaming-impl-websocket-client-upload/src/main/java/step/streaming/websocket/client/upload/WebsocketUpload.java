@@ -38,7 +38,8 @@ public class WebsocketUpload extends AbstractTransfer implements StreamingUpload
             if (throwable == null) {
                 setCurrentStatus(status);
             } else {
-                setCurrentStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.FAILED, null));
+                // FIXME: what's the size?
+                setCurrentStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.FAILED, 0, null));
             }
         });
     }

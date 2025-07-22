@@ -4,12 +4,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.data.CheckpointingOutputStream;
 import step.streaming.data.FileChunk;
+import step.streaming.data.util.ThrowingConsumer;
+import step.streaming.server.data.LinebreakDetectingOutputStream;
+import step.streaming.server.data.LinebreakIndexFile;
 
 import java.io.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * A file-based implementation of {@link StreamingResourcesStorageBackend} that stores each resource
@@ -74,31 +78,78 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
     }
 
     @Override
-    public void prepareForWrite(String resourceId) throws IOException {
+    public void prepareForWrite(String resourceId, boolean enableLineCounting) throws IOException {
         File file = resolveFileForId(resourceId, true);
-        logger.debug("Prepared file {} for resource {}", file, resourceId);
+        if (enableLineCounting) {
+            LinebreakIndexFile.createIfNeeded(file);
+        }
+        logger.debug("Prepared file {} for resource {}, indexed={}", file, resourceId, enableLineCounting);
     }
 
     @Override
-    public void writeChunk(String resourceId, InputStream input, Consumer<Long> sizeListener) throws IOException {
-        File file = resolveFileForId(resourceId, false);
-        long start = file.length();
+    public LinebreakIndexFile getLinebreakIndex(String resourceId) throws IOException {
+        return getLinebreakIndexFile(resourceId, false);
+    }
 
+    private LinebreakIndexFile getLinebreakIndexFile(String resourceId, boolean forWrite) throws IOException {
+        File file = resolveFileForId(resourceId, false);
+        if (forWrite) {
+            return LinebreakIndexFile.openIfExistsForWrite(file, file.length());
+        } else {
+            return LinebreakIndexFile.openIfExists(file);
+        }
+    }
+
+    @Override
+    public void writeChunk(String resourceId, InputStream input, Consumer<Long> fileSizeConsumer, Consumer<Long> linebreakCountConsumer) throws IOException {
+        // In the current implementation, uploads are one-shot, i.e. the file is uploaded in a single chunk. However,
+        // it could also be a resuming/appending write, hence we account for that by "resuming" from the current file size (0 if non-existent)
+        File file = resolveFileForId(resourceId, false);
+        long startOffset = file.length();
+        // NOTE: indexFile will be null if line-counting was not requested at registration time
+        LinebreakIndexFile indexFile = getLinebreakIndexFile(resourceId, true);
+
+        // This is something like a local method/function; we need to do it this way because we don't
+        // want to explicitly create the streams in the try-with-resources below, as that would attempt to close them multiple times
+        Function<OutputStream, OutputStream> actualOutputStreamDeterminingFunction = underlyingStream -> {
+            if (indexFile != null) {
+                // use provided stream, but wrapped with line break detection/update logic
+                ThrowingConsumer<Long> linebreakPositionListener = linebreakPosition -> {
+                    long newLinebreakCount = indexFile.addLinebreakPosition(linebreakPosition);
+                    if (linebreakCountConsumer != null) {
+                        linebreakCountConsumer.accept(newLinebreakCount);
+                    }
+                };
+                return new LinebreakDetectingOutputStream(underlyingStream, linebreakPositionListener);
+            } else {
+                // no index file, directly use provided stream
+                return underlyingStream;
+            }
+        };
+
+
+
+        // This will auto-close the input and output streams, but we need to manually handle the indexFile because it
+        // may be null.
         try (
                 input;
-                OutputStream out = new CheckpointingOutputStream(
-                        FileChunk.getOutputStream(file, start, paranoidSyncMode),
+                OutputStream checkpointingOut = new CheckpointingOutputStream(
+                        actualOutputStreamDeterminingFunction.apply(FileChunk.getOutputStream(file, startOffset, paranoidSyncMode)),
                         flushAndNotifyIntervalMillis,
-                        sizeListener
+                        fileSizeConsumer
                 )
         ) {
-            long written = input.transferTo(out);
+            long written = input.transferTo(checkpointingOut);
             logger.debug("Wrote {} bytes to file {}", written, file);
         } catch (IOException e) {
             logger.error("Failed to write chunk for resource {}", resourceId, e);
             // Implementation note: Some uploads (e.g. Websockets) DO NOT necessarily throw an Exception on the InputStream!
             // Instead, the transfer will seemingly complete correctly, but the session is then closed abnormally.
             throw e;
+        } finally {
+            if (indexFile != null) {
+                indexFile.close();
+            }
         }
 
         logger.debug("Wrote chunk to resource {} (current size: {} bytes)", resourceId, file.length());
@@ -121,20 +172,11 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
     }
 
     /**
-     * Handles a failed upload. This implementation deletes any files associated with the given resource ID.
-     *
+     * Handles a failed upload. This implementation currently does nothing,
+     * as we decided to keep even failed data.
      * @param resourceId the failed resource
      */
     public void handleFailedUpload(String resourceId) {
-        try {
-            File file = resolveFileForId(resourceId, false);
-            if (file.exists()) {
-                boolean deleted = file.delete();
-                logger.info("Deletion of file {} after failed upload: {}", file, deleted ? "OK" : "deletion failed");
-            }
-        } catch (IOException e) {
-            logger.warn("Error while handling failed upload", e);
-        }
     }
 
     /**
@@ -150,7 +192,6 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
                 throw new IOException("Failed to create directory: " + parent);
             }
         }
-
         return file;
     }
 

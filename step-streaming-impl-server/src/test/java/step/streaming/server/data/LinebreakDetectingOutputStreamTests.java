@@ -1,4 +1,4 @@
-package step.streaming.data;
+package step.streaming.server.data;
 
 import org.junit.Test;
 

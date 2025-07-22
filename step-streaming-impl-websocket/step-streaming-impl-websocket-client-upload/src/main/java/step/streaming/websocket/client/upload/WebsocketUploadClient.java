@@ -86,7 +86,7 @@ public class WebsocketUploadClient {
         try {
             StreamingResourceReference reference = referenceFuture.get(5, TimeUnit.SECONDS);
             upload.setUploadReference(reference);
-            upload.setCurrentUploadStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L));
+            upload.setCurrentUploadStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L, null));
             state = State.UPLOADING;
         } catch (Exception e) {
             throw new IOException(e);
@@ -146,7 +146,7 @@ public class WebsocketUploadClient {
 
     private void updateInProgressTransferSize(long transferredBytes) {
         if (!upload.getFinalStatusFuture().isDone()) {
-            upload.setCurrentUploadStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.IN_PROGRESS, transferredBytes));
+            upload.setCurrentUploadStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.IN_PROGRESS, transferredBytes, null));
         }
     }
 
@@ -159,7 +159,7 @@ public class WebsocketUploadClient {
         if (state == State.FINALIZED) {
             // normal closure
             logger.debug("{} Closing session, reason={}", this, closeReason);
-            upload.getFinalStatusFuture().complete(new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, uploadFinishedFuture.join().finalSize));
+            upload.getFinalStatusFuture().complete(new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, uploadFinishedFuture.join().finalSize, null));
         } else {
             logger.warn("{} Unexpected closure of session, reason={}, currently in state {}", this, closeReason, state);
             // terminate open futures if any

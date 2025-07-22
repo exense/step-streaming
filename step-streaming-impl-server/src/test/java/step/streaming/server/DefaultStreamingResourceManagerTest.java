@@ -2,7 +2,11 @@ package step.streaming.server;
 
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
+import org.junit.function.ThrowingRunnable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
@@ -13,11 +17,13 @@ import step.streaming.server.test.TestingStorageBackend;
 import java.io.*;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Collectors;
 
 import static org.junit.Assert.*;
 
 public class DefaultStreamingResourceManagerTest {
 
+    private static final Logger log = LoggerFactory.getLogger(DefaultStreamingResourceManagerTest.class);
     private TestingStorageBackend storageBackend;
     private InMemoryCatalogBackend catalogBackend;
     private DefaultStreamingResourceManager manager;
@@ -129,7 +135,7 @@ public class DefaultStreamingResourceManagerTest {
                 Thread chunkWriter = createChunkWriter(out, 0, 5);
 
                 chunkWriter.start();
-                FailingInputStream failingIn = new FailingInputStream(in, 35, false);
+                FailingInputStream failingIn = new FailingInputStream(in, 37, false);
                 manager.writeChunk(resourceId, failingIn); // will receive partial data
                 chunkWriter.join();
             } catch (IOException | InterruptedException ignored) {
@@ -143,7 +149,85 @@ public class DefaultStreamingResourceManagerTest {
 
         StreamingResourceStatus finalStatus = listenerEvents.get(listenerEvents.size() - 1);
         assertEquals(StreamingResourceTransferStatus.FAILED, finalStatus.getTransferStatus());
-        assertNull("Failed upload should not have a final size", finalStatus.getCurrentSize());
+        // we still expect failed resources to keep their last "successful" size
+        assertEquals(30L, finalStatus.getCurrentSize().longValue());
     }
 
+    @Test
+    public void testLineIndexingWithFinalLinebreak() throws Exception {
+        String id = uploadAndCheckSizeAndLinebreaks("fileWithFinalLineBreak.txt", 81, 5);
+        // we'll do some of the edge case tests in here
+        assertException(() -> manager.getLinebreakPositions(id, 0, -1), "count must not be negative");
+        assertException(() -> manager.getLinebreakPositions(id, -1, 2), "Linebreak index out of bounds: -1; acceptable values: [0, 5[");
+        assertException(() -> manager.getLinebreakPositions(id, 5, 2), "Linebreak index out of bounds: 5; acceptable values: [0, 5[");
+        assertException(() -> manager.getLinebreakPositions(id, 4, 2), "Starting index + count exceeds number of entries: 4 + 2 > 5");
+        // requesting an empty stream (index doesn't really matter, should just be within bounds)
+        assertEquals(List.of(), manager.getLinebreakPositions(id, 2, 0).collect(Collectors.toList()));
+        assertEquals(List.of(55L, 60L, 65L, 71L, 80L), manager.getLinebreakPositions(id, 0, 5).collect(Collectors.toList()));
+        assertEquals(List.of(65L, 71L), manager.getLinebreakPositions(id, 2, 2).collect(Collectors.toList()));
+        assertEquals("Note: This file uses CR/LF line breaks (Windows-style)\r\n", manager.getLines(id, 0, 1).collect(Collectors.toList()).get(0));
+        assertEquals("uno\r\n", manager.getLines(id, 1, 1).collect(Collectors.toList()).get(0));
+        assertEquals(List.of("dos\r\n", "tres\r\n"), manager.getLines(id, 2, 2).collect(Collectors.toList()));
+    }
+
+
+    @Test
+    public void testLineIndexingWithoutFinalLinebreak() throws Exception {
+        String id = uploadAndCheckSizeAndLinebreaks("fileWithoutFinalLineBreak.txt", 82, 5L);
+        // here the manager has to manage the missing last linebreak by itself (index only contains 4)
+        assertEquals(List.of(50L, 54L, 58L, 64L, 81L), manager.getLinebreakPositions(id, 0, 5).collect(Collectors.toList()));
+        assertEquals(List.of("two\n", "three\n", "foooooooooooooour" /* note: no trailing LB */), manager.getLines(id, 2, 3).collect(Collectors.toList()));
+
+    }
+
+    @Test
+    public void testLineIndexingSingleLineWithFinalLinebreak() throws Exception {
+        String id = uploadAndCheckSizeAndLinebreaks("singleLineWithLinebreak.txt", 23, 1);
+        assertEquals(List.of(22L), manager.getLinebreakPositions(id, 0, 1).collect(Collectors.toList()));
+        assertEquals(List.of("This is a single line.\n"), manager.getLines(id, 0, 1).collect(Collectors.toList()));
+    }
+
+    @Test
+    public void testLineIndexingSingleLineWithoutFinalLinebreak() throws Exception {
+        String id = uploadAndCheckSizeAndLinebreaks("singleLineWithoutLinebreak.txt", 43, 1);
+        assertEquals(List.of(42L), manager.getLinebreakPositions(id, 0, 1).collect(Collectors.toList()));
+        assertEquals(List.of("This is a single line without a line break."), manager.getLines(id, 0, 1).collect(Collectors.toList()));
+    }
+
+    @Test
+    public void testLineIndexingEmpty() throws Exception {
+        uploadAndCheckSizeAndLinebreaks("empty.txt", 0, 0);
+    }
+
+    @Test
+    public void testLineIndexingLinebreakOnly() throws Exception {
+        String id = uploadAndCheckSizeAndLinebreaks("linebreakOnly.txt", 1, 1);
+        assertEquals(List.of(0L), manager.getLinebreakPositions(id, 0, 1).collect(Collectors.toList()));
+        assertEquals(List.of("\n"), manager.getLines(id, 0, 1).collect(Collectors.toList()));
+    }
+
+    private String uploadAndCheckSizeAndLinebreaks(String fileName, long expectedSize, long expectedNumberOfLines) throws IOException {
+        final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", "text/plain"), null);
+        InputStream is = getClass().getClassLoader().getResourceAsStream(fileName);
+        long size = manager.writeChunk(resourceId, is);
+        assertEquals(expectedSize, size);
+        manager.markCompleted(resourceId);
+        StreamingResourceStatus expected = new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, expectedSize, expectedNumberOfLines);
+        assertEquals(expected, manager.getStatus(resourceId));
+        return resourceId;
+    }
+
+    private void assertException(ThrowingRunnable runnable, String message) {
+        boolean failTest = true;
+        try {
+            runnable.run();
+        } catch (Throwable e) {
+            failTest = false;
+            assertEquals(message, e.getMessage());
+        } finally {
+            if (failTest) {
+                fail("Expected exception with message: " + message);
+            }
+        }
+    }
 }

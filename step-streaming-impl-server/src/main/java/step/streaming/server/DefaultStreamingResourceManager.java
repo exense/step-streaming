@@ -3,17 +3,21 @@ package step.streaming.server;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.*;
+import step.streaming.server.data.LineSlicingIterator;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.io.UncheckedIOException;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 public class DefaultStreamingResourceManager implements StreamingResourceManager {
 
@@ -24,7 +28,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     private final StreamingResourceUploadContexts uploadContexts;
     private final Function<String, StreamingResourceReference> referenceProducerFunction;
 
-    // Listeners interested in a single resource (e.g. download clients)
+    // Listeners interested in a single resource (e.g. download clients). Listeners interested in an entire context will use the respective methods in the uploadContexts instead.
     private final Map<String, CopyOnWriteArrayList<Consumer<StreamingResourceStatus>>> statusListeners = new ConcurrentHashMap<>();
 
     public DefaultStreamingResourceManager(StreamingResourcesCatalogBackend catalog,
@@ -44,13 +48,13 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     }
 
     @Override
-    public String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) throws IOException{
+    public String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) throws IOException {
         StreamingResourceUploadContext uploadContext = (uploadContextId != null && uploadContexts != null) ? uploadContexts.getContext(uploadContextId) : null;
         String resourceId = catalog.createResource(metadata, uploadContext);
         logger.debug("Created new streaming resource: {}, context={}", resourceId, uploadContextId);
 
         try {
-            storage.prepareForWrite(resourceId);
+            storage.prepareForWrite(resourceId, metadata.getSupportsLineAccess());
         } catch (IOException e) {
             markFailed(resourceId);
             logger.error("Storage backend failed to prepare resource {} for writing", resourceId, e);
@@ -59,9 +63,9 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
         if (uploadContext != null) {
             uploadContexts.onResourceCreated(uploadContextId, resourceId, metadata);
         }
-        StreamingResourceStatus initStatus = new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L);
-        catalog.updateStatus(resourceId, initStatus);
-        emitStatus(resourceId, initStatus);
+        StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(StreamingResourceTransferStatus.INITIATED, 0L, metadata.getSupportsLineAccess() ? 0L : null);
+        StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
+        emitStatus(resourceId, status);
 
         return resourceId;
     }
@@ -69,14 +73,18 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     @Override
     public long writeChunk(String resourceId, InputStream input) throws IOException {
         try {
-            storage.writeChunk(resourceId, input, updatedSize -> {
-                StreamingResourceStatus status = new StreamingResourceStatus(
-                        StreamingResourceTransferStatus.IN_PROGRESS, updatedSize
+            AtomicReference<Long> linebreakCount = new AtomicReference<>();
+            Consumer<Long> linebreakCountListener = linebreakCount::set;
+            Consumer<Long> sizeListener = updatedSize -> {
+                StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(
+                        StreamingResourceTransferStatus.IN_PROGRESS, updatedSize, linebreakCount.get()
                 );
+                logger.debug("Updating streaming resource: {}, statusUpdate={}", resourceId, update);
+                StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
                 logger.debug("Updated streaming resource: {}, status={}", resourceId, status);
-                catalog.updateStatus(resourceId, status);
                 emitStatus(resourceId, status);
-            });
+            };
+            storage.writeChunk(resourceId, input, sizeListener, linebreakCountListener);
 
             long currentSize = storage.getCurrentSize(resourceId);
             logger.debug("Delegated chunk write for {} (current size: {})", resourceId, currentSize);
@@ -92,9 +100,28 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     public void markCompleted(String resourceId) {
         try {
             long finalSize = storage.getCurrentSize(resourceId);
-            StreamingResourceStatus status = new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, finalSize);
+            LinebreakIndex linebreakIndex = storage.getLinebreakIndex(resourceId);
+            Long correctedNumberOfLines = null;
+            // Line numbers are a PITA in some edge cases, because not all files properly end with a linebreak.
+            // Note that this only (potentially) concerns the very last line of the file. If the last byte
+            // in the file is a linebreak, all is good -- the file is properly terminated.
+            // However, if it is NOT, then the last line will span from the position of the last LB+1 to the end of the file.
+            // We only enter this block at all if an index is present (i.e. line indexing is on)
+            if (linebreakIndex != null) {
+                long linebreakCount = linebreakIndex.getTotalEntries();
+                if (linebreakCount > 0) {
+                    long lastLb = linebreakIndex.getLinebreakPosition(linebreakCount - 1);
+                    if (lastLb != finalSize - 1) {
+                        correctedNumberOfLines = linebreakCount + 1;
+                    }
+                } else {
+                    // even more exotic: no linebreak at all -> single line, UNLESS the file has 0 bytes.
+                    correctedNumberOfLines = finalSize > 0 ? 1L : 0L;
+                }
+            }
+            StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(StreamingResourceTransferStatus.COMPLETED, finalSize, correctedNumberOfLines);
             logger.debug("Resource marked COMPLETED: {} (size: {})", resourceId, finalSize);
-            catalog.updateStatus(resourceId, status);
+            StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
             emitStatus(resourceId, status);
         } catch (IOException e) {
             logger.warn("IOException during markCompleted for {}, marking as failed instead", resourceId, e);
@@ -105,11 +132,11 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     @Override
     public void markFailed(String resourceId) {
         storage.handleFailedUpload(resourceId);
-        StreamingResourceStatus status = new StreamingResourceStatus(
-                StreamingResourceTransferStatus.FAILED, null
+        StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(
+                StreamingResourceTransferStatus.FAILED, null, null
         );
-        catalog.updateStatus(resourceId, status);
-        logger.warn("Resource marked FAILED: {}", resourceId);
+        StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
+        logger.warn("Resource marked FAILED: {}, status={}", resourceId, status);
         emitStatus(resourceId, status);
     }
 
@@ -169,5 +196,74 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
                 uploadContexts.onResourceStatusChanged(uploadContextId, resourceId, status);
             }
         }
+    }
+
+    @Override
+    public Stream<Long> getLinebreakPositions(String resourceId, long startingLinebreakIndex, long count) throws IOException {
+        // this will throw an IllegalArgumentException if the ID does not exist
+        StreamingResourceStatus status = catalog.getStatus(resourceId);
+        if (status.getNumberOfLines() == null) {
+            throw new IllegalArgumentException("Resource " + resourceId + " does not support access by line number");
+        }
+        LinebreakIndex index = storage.getLinebreakIndex(resourceId);
+        if (index == null) {
+            throw new IllegalStateException("Linebreak index not found for resource " + resourceId);
+        }
+        if (startingLinebreakIndex < 0 || startingLinebreakIndex >= status.getNumberOfLines()) {
+            throw new IndexOutOfBoundsException("Linebreak index out of bounds: " + startingLinebreakIndex + "; acceptable values: [0, " + status.getNumberOfLines() + "[");
+        }
+        if (count < 0) {
+            throw new IllegalArgumentException("count must not be negative");
+        }
+        // edge case -> return an empty stream
+        if (count == 0) {
+            return Stream.empty();
+        }
+        long lastIndex = startingLinebreakIndex + count;
+        if (lastIndex > status.getNumberOfLines()) {
+            throw new IndexOutOfBoundsException("Starting index + count exceeds number of entries: " + startingLinebreakIndex + " + " + count + " > " + status.getNumberOfLines());
+        }
+        // special case for the last (logical) linebreak, which may not be present in the index, but actually be EOF
+        if (lastIndex == status.getNumberOfLines()) {
+            if (index.getTotalEntries() == lastIndex) {
+                // Index DOES have the last linebreak (i.e. file ends with LB)
+                return index.getLinebreakPositions(startingLinebreakIndex, count);
+            } else {
+                // Index DOES NOT have last LB -- append it to the end of the stream by determining from file size.
+                // Note that the last byte offset is the file size - 1.
+                return Stream.concat(index.getLinebreakPositions(startingLinebreakIndex, count - 1), Stream.of(status.getCurrentSize() - 1));
+            }
+        } else {
+            return index.getLinebreakPositions(startingLinebreakIndex, count);
+        }
+    }
+
+    @Override
+    public Stream<String> getLines(String resourceId, long startingLineIndex, long count) throws IOException {
+        // this will perform any required validation. However, it returns the positions where the lines END, not where they start.
+        Stream<Long> linebreakPositions = getLinebreakPositions(resourceId, startingLineIndex, count);
+        // edge case -> return empty stream immediately
+        if (count == 0) {
+            return Stream.empty();
+        }
+        // We can't look at the last element of the stream without consuming it, so we just perform a new request just for the last LB.
+        // This will produce a stream with one element (last byte position), and we need to add 1 because the read requests will stop *before* the given argument.
+        long lastByteExclusive = getLinebreakPositions(resourceId, startingLineIndex + count - 1, 1).collect(Collectors.toList()).get(0) + 1;
+        // The first byte is either the start of the file, or the position of the linebreak *prior* to the requested line (plus 1 to skip the LB itself)
+        long firstByteInclusive = (startingLineIndex > 0) ? storage.getLinebreakIndex(resourceId).getLinebreakPosition(startingLineIndex - 1) + 1 : 0;
+
+        InputStream bytesStream = openStream(resourceId, firstByteInclusive, lastByteExclusive);
+
+        PrimitiveIterator.OfLong relativeLinebreakPositions = linebreakPositions.mapToLong(p -> p - firstByteInclusive).iterator();
+        return StreamSupport.stream(
+                Spliterators.spliteratorUnknownSize(new LineSlicingIterator(bytesStream, relativeLinebreakPositions),
+                        Spliterator.ORDERED | Spliterator.NONNULL),
+                false).onClose(() -> {
+            try {
+                bytesStream.close();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
     }
 }

@@ -1,9 +1,10 @@
-package step.streaming.data;
+package step.streaming.server.data;
+
+import step.streaming.data.util.ThrowingConsumer;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Objects;
-import java.util.function.Consumer;
 
 /**
  * An OutputStream decorator that detects linebreaks ({@code '\\n'} bytes) in the written stream
@@ -13,16 +14,16 @@ import java.util.function.Consumer;
 public class LinebreakDetectingOutputStream extends OutputStream {
 
     private final OutputStream delegate;
-    private final Consumer<Long> linebreakConsumer;
+    private final ThrowingConsumer<Long> linebreakConsumer;
     private long bytePosition = 0;
 
     /**
      * Creates a new linebreak-detecting OutputStream.
      *
-     * @param delegate           the underlying OutputStream to write to
+     * @param delegate          the underlying OutputStream to write to
      * @param linebreakConsumer a callback that receives the byte position of each '\\n'
      */
-    public LinebreakDetectingOutputStream(OutputStream delegate, Consumer<Long> linebreakConsumer) {
+    public LinebreakDetectingOutputStream(OutputStream delegate, ThrowingConsumer<Long> linebreakConsumer) {
         this.delegate = Objects.requireNonNull(delegate, "delegate must not be null");
         this.linebreakConsumer = Objects.requireNonNull(linebreakConsumer, "linebreakConsumer must not be null");
     }
@@ -30,7 +31,11 @@ public class LinebreakDetectingOutputStream extends OutputStream {
     @Override
     public void write(int b) throws IOException {
         if ((b & 0xFF) == '\n') {
-            linebreakConsumer.accept(bytePosition);
+            try {
+                linebreakConsumer.accept(bytePosition);
+            } catch (Exception e) {
+                throw new IOException(e);
+            }
         }
         delegate.write(b);
         bytePosition++;
@@ -41,7 +46,11 @@ public class LinebreakDetectingOutputStream extends OutputStream {
         for (int i = 0; i < len; i++) {
             int value = b[off + i] & 0xFF;
             if (value == '\n') {
-                linebreakConsumer.accept(bytePosition + i);
+                try {
+                    linebreakConsumer.accept(bytePosition + i);
+                } catch (Exception e) {
+                    throw new IOException(e);
+                }
             }
         }
         delegate.write(b, off, len);

@@ -28,7 +28,6 @@ import java.util.concurrent.TimeUnit;
  * This class will also terminate any currently active sessions on shutdown.
  */
 public class DefaultWebsocketServerEndpointSessionsHandler implements WebsocketServerEndpointSessionsHandler {
-    private static volatile DefaultWebsocketServerEndpointSessionsHandler INSTANCE;
     private static final Logger logger = LoggerFactory.getLogger(DefaultWebsocketServerEndpointSessionsHandler.class);
 
     private final ScheduledExecutorService scheduler;
@@ -36,7 +35,7 @@ public class DefaultWebsocketServerEndpointSessionsHandler implements WebsocketS
     private final ByteBuffer pingPayload = ByteBuffer.wrap(new byte[]{42}).asReadOnlyBuffer();
     private static final long PING_INTERVAL_SECONDS = 25;
 
-    private DefaultWebsocketServerEndpointSessionsHandler() {
+    public DefaultWebsocketServerEndpointSessionsHandler() {
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, this.getClass().getSimpleName());
             t.setDaemon(true);
@@ -44,18 +43,6 @@ public class DefaultWebsocketServerEndpointSessionsHandler implements WebsocketS
         });
 
         scheduler.scheduleAtFixedRate(this::sendPings, PING_INTERVAL_SECONDS, PING_INTERVAL_SECONDS, TimeUnit.SECONDS);
-    }
-
-    public static DefaultWebsocketServerEndpointSessionsHandler getInstance() {
-        if (INSTANCE == null) {
-            synchronized (DefaultWebsocketServerEndpointSessionsHandler.class) {
-                if (INSTANCE == null) {
-                    logger.info("Instantiating and starting {}", DefaultWebsocketServerEndpointSessionsHandler.class.getSimpleName());
-                    INSTANCE = new DefaultWebsocketServerEndpointSessionsHandler();
-                }
-            }
-        }
-        return INSTANCE;
     }
 
     @Override

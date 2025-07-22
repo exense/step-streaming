@@ -47,7 +47,7 @@ public class StreamingResourceEndpointTests {
 
     @Before
     public void setUp() throws IOException {
-        sessionsHandler = DefaultWebsocketServerEndpointSessionsHandler.getInstance();
+        sessionsHandler = new DefaultWebsocketServerEndpointSessionsHandler();
         storageBackend = new TestingStorageBackend(1000L, false);
         catalogBackend = new InMemoryCatalogBackend();
         referenceProducer = new URITemplateBasedReferenceProducer(null, WebsocketDownloadEndpoint.DEFAULT_ENDPOINT_URL, WebsocketDownloadEndpoint.DEFAULT_PARAMETER_NAME);
