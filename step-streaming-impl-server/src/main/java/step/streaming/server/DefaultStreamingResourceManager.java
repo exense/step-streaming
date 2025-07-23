@@ -23,13 +23,13 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
 
     private static final Logger logger = LoggerFactory.getLogger(DefaultStreamingResourceManager.class);
 
-    private final StreamingResourcesCatalogBackend catalog;
-    private final StreamingResourcesStorageBackend storage;
-    private final StreamingResourceUploadContexts uploadContexts;
-    private final Function<String, StreamingResourceReference> referenceProducerFunction;
+    protected final StreamingResourcesCatalogBackend catalog;
+    protected final StreamingResourcesStorageBackend storage;
+    protected final StreamingResourceUploadContexts uploadContexts;
+    protected final Function<String, StreamingResourceReference> referenceProducerFunction;
 
     // Listeners interested in a single resource (e.g. download clients). Listeners interested in an entire context will use the respective methods in the uploadContexts instead.
-    private final Map<String, CopyOnWriteArrayList<Consumer<StreamingResourceStatus>>> statusListeners = new ConcurrentHashMap<>();
+    protected final Map<String, CopyOnWriteArrayList<Consumer<StreamingResourceStatus>>> statusListeners = new ConcurrentHashMap<>();
 
     public DefaultStreamingResourceManager(StreamingResourcesCatalogBackend catalog,
                                            StreamingResourcesStorageBackend storage,

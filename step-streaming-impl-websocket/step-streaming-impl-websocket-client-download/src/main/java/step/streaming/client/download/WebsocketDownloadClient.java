@@ -5,10 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
-import step.streaming.websocket.protocol.download.DownloadProtocolMessage;
-import step.streaming.websocket.protocol.download.DownloadServerMessage;
-import step.streaming.websocket.protocol.download.RequestChunkMessage;
-import step.streaming.websocket.protocol.download.StatusChangedMessage;
+import step.streaming.websocket.protocol.download.*;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -45,6 +42,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
     private final List<Runnable> closeListeners = new CopyOnWriteArrayList<>();
     private State state;
     private Consumer<InputStream> dataConsumer;
+    private Consumer<List<String>> linesConsumer;
 
     public WebsocketDownloadClient(URI endpointUri) throws IOException {
         this(endpointUri, ContainerProvider.getWebSocketContainer());
@@ -70,8 +68,9 @@ public class WebsocketDownloadClient implements AutoCloseable {
         }
     }
 
-    private void onMessage(String messageString) {
+    private void onTextData(String messageString) {
         if (state == State.CONNECTED) {
+            // we're only ready after receiving an initial status message from the server
             state = State.READY;
         }
         logger.debug("{} Received message {}", this, messageString);
@@ -86,15 +85,22 @@ public class WebsocketDownloadClient implements AutoCloseable {
             } else {
                 logger.debug("Omitting notification for unchanged status {}", status);
             }
-        } else {
+        } else if (message instanceof LinesMessage) {
+            onLinesData(((LinesMessage) message).lines);
+        } // note: binary data arrives through the onStreamData hook
+        else {
             throw new IllegalStateException("Unexpected message in state " + state + ": " + message);
         }
     }
 
-    private void onData(InputStream inputStream) {
-        if (state != State.AWAITING_DOWNLOAD) {
-            throw new IllegalStateException("Expected state AWAITING_DOWNLOAD, got " + state);
+    private void expectCurrentState(State expectedState) {
+        if (state != expectedState) {
+            throw new IllegalStateException("Expected to be in state " + expectedState + " but was " + state);
         }
+    }
+
+    private void onStreamData(InputStream inputStream) {
+        expectCurrentState(State.AWAITING_DOWNLOAD);
         state = State.DOWNLOADING;
         if (dataConsumer != null) {
             dataConsumer.accept(inputStream);
@@ -108,10 +114,20 @@ public class WebsocketDownloadClient implements AutoCloseable {
         state = State.READY;
     }
 
-    public void requestChunkStream(long startOffset, long endOffset, Consumer<InputStream> streamConsumer) throws Exception {
-        if (state != State.READY) {
-            throw new IllegalStateException("Not in READY state (current state: " + state + ")");
+    private void onLinesData(List<String> lines) {
+        expectCurrentState(State.AWAITING_DOWNLOAD);
+        if (linesConsumer != null) {
+            try {
+                linesConsumer.accept(lines);
+            } catch (Exception unexpected) {
+                logger.error("Unexpected error while handling lines request callback", unexpected);
+            }
         }
+        state = State.READY;
+    }
+
+    public void requestChunkStream(long startOffset, long endOffset, Consumer<InputStream> streamConsumer) throws Exception {
+        expectCurrentState(State.READY);
         // FIXME: be more strict here?
         if (streamConsumer == null) {
             logger.warn("streamConsumer is null, data will be transferred but discarded");
@@ -131,6 +147,33 @@ public class WebsocketDownloadClient implements AutoCloseable {
         logger.debug("{} requesting chunk [{}, {}]", this, startOffset, endOffset);
         session.getBasicRemote().sendText(new RequestChunkMessage(startOffset, endOffset).toString());
     }
+
+    public void requestTextLines(long startingLineIndex, long linesCount, Consumer<List<String>> linesConsumer) throws Exception {
+        expectCurrentState(State.READY);
+        if (startingLineIndex < 0) {
+            throw new IllegalArgumentException("Invalid startingLineIndex: " + startingLineIndex);
+        }
+        if (linesCount < 0) {
+            throw new IllegalArgumentException("Invalid linesCount: " + linesCount);
+        }
+        StreamingResourceStatus status = lastReceivedStatus.get();
+        if (status.getTransferStatus() == StreamingResourceTransferStatus.FAILED) {
+            throw new IllegalStateException("Remote resource indicates a FAILED resource");
+        }
+        if (status.getNumberOfLines() == null) {
+            throw new IllegalStateException("Remote resource does not support access by line number");
+        }
+        if (status.getNumberOfLines() < startingLineIndex + linesCount ) {
+            throw new IllegalArgumentException("Line access request out of bounds");
+        }
+        state = State.AWAITING_DOWNLOAD;
+        this.linesConsumer = linesConsumer;
+        logger.debug("{} requesting lines {start={}, count={}}", this, startingLineIndex, linesCount);
+        session.getBasicRemote().sendText(new RequestLinesMessage(startingLineIndex, linesCount).toString());
+
+    }
+
+
 
     public CompletableFuture<Long> requestChunkTransfer(long startOffset, long endOffset, OutputStream outputStream) {
         CompletableFuture<Long> transferredFuture = new CompletableFuture<>();
@@ -198,8 +241,8 @@ public class WebsocketDownloadClient implements AutoCloseable {
         public void onOpen(Session session, EndpointConfig config) {
             // No timeout; server side takes care of keepalive messages
             session.setMaxIdleTimeout(0);
-            session.addMessageHandler(String.class, self::onMessage);
-            session.addMessageHandler(InputStream.class, self::onData);
+            session.addMessageHandler(String.class, self::onTextData);
+            session.addMessageHandler(InputStream.class, self::onStreamData);
         }
 
         @Override

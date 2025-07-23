@@ -9,17 +9,18 @@ import org.slf4j.LoggerFactory;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.data.CheckpointingOutputStream;
 import step.streaming.server.StreamingResourceManager;
-import step.streaming.websocket.protocol.download.DownloadClientMessage;
-import step.streaming.websocket.protocol.download.DownloadProtocolMessage;
-import step.streaming.websocket.protocol.download.RequestChunkMessage;
-import step.streaming.websocket.protocol.download.StatusChangedMessage;
+import step.streaming.websocket.protocol.download.*;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class WebsocketDownloadEndpoint extends Endpoint {
     public static final String DEFAULT_ENDPOINT_URL = "/ws/streaming/download/{id}";
@@ -27,8 +28,8 @@ public class WebsocketDownloadEndpoint extends Endpoint {
 
     private static final Logger logger = LoggerFactory.getLogger(WebsocketDownloadEndpoint.class);
     private final WebsocketServerEndpointSessionsHandler sessionsHandler;
-    private final StreamingResourceManager manager;
-    private final String parameterName;
+    protected final StreamingResourceManager manager;
+    protected final String resourceIdParameterName;
     // we must use the same reference for registering/unregistering
     private final Consumer<StreamingResourceStatus> statusChangeListener = this::onResourceStatusChanged;
 
@@ -40,14 +41,14 @@ public class WebsocketDownloadEndpoint extends Endpoint {
 
 
 
-    private Session session;
-    private String resourceId;
+    protected Session session;
+    protected String resourceId;
 
-    public WebsocketDownloadEndpoint(StreamingResourceManager manager, WebsocketServerEndpointSessionsHandler sessionsHandler, String parameterName) {
+    public WebsocketDownloadEndpoint(StreamingResourceManager manager, WebsocketServerEndpointSessionsHandler sessionsHandler, String resourceIdParameterName) {
         DownloadProtocolMessage.initialize();
         this.manager = manager;
         this.sessionsHandler = sessionsHandler;
-        this.parameterName = parameterName;
+        this.resourceIdParameterName = resourceIdParameterName;
     }
 
     @Override
@@ -55,7 +56,7 @@ public class WebsocketDownloadEndpoint extends Endpoint {
         this.session = session;
         Optional.ofNullable(sessionsHandler).ifPresent(h -> h.register(session));
         session.addMessageHandler(String.class, this::onMessage);
-        resourceId = session.getPathParameters().get(parameterName);
+        resourceId = Objects.requireNonNull(session.getPathParameters().get(resourceIdParameterName));
         logger.debug("Session opened: {}, resource={}", session.getId(), resourceId);
         manager.registerStatusListener(resourceId, statusChangeListener);
     }
@@ -67,6 +68,8 @@ public class WebsocketDownloadEndpoint extends Endpoint {
         DownloadClientMessage clientMessage = DownloadClientMessage.fromString(messageString);
         if (clientMessage instanceof RequestChunkMessage) {
             handleDownloadRequest((RequestChunkMessage) clientMessage);
+        } else if (clientMessage instanceof RequestLinesMessage) {
+            handleLinesRequest((RequestLinesMessage) clientMessage);
         } else {
             throw new IllegalStateException("Unhandled message: " + clientMessage);
         }
@@ -84,20 +87,13 @@ public class WebsocketDownloadEndpoint extends Endpoint {
         }
     }
 
-    private void handleDownloadRequest(RequestChunkMessage request) {
+    private void enterDownloadingState() {
         synchronized (coordinationLock) {
             downloading = true;
         }
-        //downloading.set(true);
-        logger.debug("Received request for chunk [{}, {}] of resource {}", request.startOffset, request.endOffset, resourceId);
-        try (InputStream in = manager.openStream(resourceId, request.startOffset, request.endOffset);
-             OutputStream out = new CheckpointingOutputStream(session.getBasicRemote().getSendStream(), 500, null)) {
-            long sent = in.transferTo(out);
-            logger.debug("{} {} Transfer completed: {} bytes", session.getId(), resourceId, sent);
-        } catch (IOException e) {
-            logger.error("Error while sending chunk [{}, {}] of resource {}", request.startOffset, request.endOffset, e);
-            throw new RuntimeException(e);
-        }
+    }
+
+    private void exitDownloadingState() {
         synchronized (coordinationLock) {
             downloading = false;
             // Check if a status update was deferred during the download
@@ -107,7 +103,35 @@ public class WebsocketDownloadEndpoint extends Endpoint {
                 sendStatusUpdate(deferred);
             }
         }
-        //downloading.set(false);
+    }
+
+    private void handleDownloadRequest(RequestChunkMessage request) {
+        enterDownloadingState();
+        logger.debug("Received request for chunk [{}, {}] of resource {}", request.startOffset, request.endOffset, resourceId);
+        try (InputStream in = manager.openStream(resourceId, request.startOffset, request.endOffset);
+             OutputStream out = new CheckpointingOutputStream(session.getBasicRemote().getSendStream(), 500, null)) {
+            long sent = in.transferTo(out);
+            logger.debug("{} {} Transfer completed: {} bytes", session.getId(), resourceId, sent);
+        } catch (IOException e) {
+            logger.error("Error while sending chunk [{}, {}] of resource {}", request.startOffset, request.endOffset, e);
+            throw new RuntimeException(e);
+        }
+        exitDownloadingState();
+    }
+
+    private void handleLinesRequest(RequestLinesMessage request) {
+        enterDownloadingState();
+        logger.debug("Received request for {} lines starting at line index {} for resource {}", request.linesCount, request.startingLineIndex, resourceId);
+        try {
+            Stream<String> linesStream = manager.getLines(resourceId, request.startingLineIndex, request.linesCount);
+            List<String> linesList = linesStream.collect(Collectors.toList());
+            logger.debug("Sent {} lines from resource {}", linesList.size(), resourceId);
+            session.getBasicRemote().sendText(new LinesMessage(linesList).toString());
+        } catch (Exception e) {
+            logger.error("Error while getting lines (start={}, count={}) from resource {}", request.startingLineIndex, request.linesCount, resourceId, e);
+            throw new RuntimeException(e);
+        }
+        exitDownloadingState();
     }
 
     private void sendStatusUpdate(StreamingResourceStatus status) {

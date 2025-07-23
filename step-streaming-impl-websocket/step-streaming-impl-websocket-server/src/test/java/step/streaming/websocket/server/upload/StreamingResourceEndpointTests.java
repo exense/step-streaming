@@ -11,8 +11,10 @@ import step.streaming.client.download.WebsocketDownload;
 import step.streaming.client.download.WebsocketDownloadClient;
 import step.streaming.client.upload.StreamingUpload;
 import step.streaming.common.StreamingResourceMetadata;
+import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
 import step.streaming.data.CheckpointingOutputStream;
+import step.streaming.data.ClampedReadInputStream;
 import step.streaming.data.MD5CalculatingInputStream;
 import step.streaming.data.MD5CalculatingOutputStream;
 import step.streaming.server.DefaultStreamingResourceManager;
@@ -35,6 +37,8 @@ import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class StreamingResourceEndpointTests {
@@ -44,6 +48,10 @@ public class StreamingResourceEndpointTests {
     private DefaultStreamingResourceManager manager;
     private WebsocketServerEndpointSessionsHandler sessionsHandler;
     private URITemplateBasedReferenceProducer referenceProducer;
+
+    private static final String FAUST_ISO8859_CHECKSUM = "317c7a8df8c817c80bf079cfcbbc6686";
+    private static final String FAUST_UTF8_CHECKSUM = "540441d13a31641d7775d91c46c94511";
+
 
     @Before
     public void setUp() throws IOException {
@@ -152,7 +160,7 @@ public class StreamingResourceEndpointTests {
         public FileBytesProducer(File sourceFile, long duration, TimeUnit durationUnit) throws Exception {
             file = File.createTempFile("streaming-upload-test", ".tmp");
             file.deleteOnExit();
-            input = new TricklingDelegatingInputStream(new FileInputStream(sourceFile), sourceFile.length(), duration, durationUnit);
+            input = new ClampedReadInputStream(new TricklingDelegatingInputStream(new FileInputStream(sourceFile), sourceFile.length(), duration, durationUnit));
             output = new MD5CalculatingOutputStream(new FileOutputStream(file));
         }
 
@@ -218,9 +226,7 @@ public class StreamingResourceEndpointTests {
         URL url = Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt");
         File sourceFile = new File(url.toURI());
         long INPUT_DATA_SIZE = 10171; // in ISO-8859-1 format
-        String INPUT_CHECKSUM = "317c7a8df8c817c80bf079cfcbbc6686";
         long OUTPUT_DATA_SIZE = 10324; // in UTF-8 format, i.e. what is expected to arrive server-side
-        String OUTPUT_CHECKSUM = "540441d13a31641d7775d91c46c94511";
         FileBytesProducer isoBytesProducer = new FileBytesProducer(sourceFile, 5, TimeUnit.SECONDS);
 
         TestingWebsocketServer server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
@@ -252,19 +258,85 @@ public class StreamingResourceEndpointTests {
         logger.info("UPLOAD FINAL STATUS: {}", upload.signalEndOfInput().get());
         upload.close(); // optional
         downloadThread.join();
-        Assert.assertEquals(INPUT_CHECKSUM, isoBytesProducer.checksum);
-        Assert.assertEquals(OUTPUT_CHECKSUM, downloadChecksum.get());
+        Assert.assertEquals(FAUST_ISO8859_CHECKSUM, isoBytesProducer.checksum);
+        Assert.assertEquals(FAUST_UTF8_CHECKSUM, downloadChecksum.get());
 
         // do another transfer, this time of the finished file
         MD5CalculatingOutputStream md5Out = new MD5CalculatingOutputStream(OutputStream.nullOutputStream());
         long again = download.getInputStream().transferTo(md5Out);
         Assert.assertEquals(OUTPUT_DATA_SIZE, again);
         md5Out.close();
-        Assert.assertEquals(OUTPUT_CHECKSUM, md5Out.getChecksum());
+        Assert.assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
         download.close();
         Thread.sleep(50);
         sessionsHandler.shutdown();
         server.stop();
+    }
+
+    @Test
+    public void testLineBasedDownload() throws Exception {
+        TestingWebsocketServer server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
+        URI uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
+        referenceProducer.setBaseUri(server.getURI());
+
+        File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
+        FileBytesProducer uploadProducer = new FileBytesProducer(sourceFile, 15, TimeUnit.SECONDS);
+
+        WebsocketUploadProvider provider = new WebsocketUploadProvider(uploadUri);
+        StreamingUpload upload = provider.startLiveTextFileUpload(uploadProducer.file, new StreamingResourceMetadata("faust.txt", StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN), StandardCharsets.ISO_8859_1);
+
+        WebsocketDownloadClient downloadClient = new WebsocketDownloadClient(upload.getReference().getUri());
+
+        MD5CalculatingOutputStream md5Out = new MD5CalculatingOutputStream(OutputStream.nullOutputStream());
+        Thread downloadThread = new Thread(() -> {
+            AtomicBoolean completed = new AtomicBoolean(false);
+            AtomicLong linesReceived = new AtomicLong(0);
+            AtomicReference<StreamingResourceStatus> status = new AtomicReference<>();
+            // we'll directly request newly available lines when the server says they're ready
+            downloadClient.registerStatusListener(serverSideStatus -> {
+                status.set(serverSideStatus);
+                long linesToFetch = status.get().getNumberOfLines() - linesReceived.get();
+                completed.set(status.get().getTransferStatus().equals(StreamingResourceTransferStatus.COMPLETED));
+                if (linesToFetch > 0) {
+                    try {
+                        downloadClient.requestTextLines(linesReceived.get(), linesToFetch, lines -> {
+                            linesReceived.addAndGet(lines.size());
+                            for (String line : lines) {
+                                try {
+                                    md5Out.write(line.getBytes(StandardCharsets.UTF_8));
+                                } catch (IOException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }
+                        });
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            });
+            try {
+                while (!completed.get() || linesReceived.get() != 296) {
+                    Thread.sleep(100);
+                }
+                md5Out.close();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+        downloadThread.start();
+
+        // synchronous and blocking
+        uploadProducer.produce();
+        upload.signalEndOfInput();
+        downloadThread.join();
+        downloadClient.close();
+
+        Thread.sleep(50);
+        sessionsHandler.shutdown();
+        server.stop();
+
+        // we retrieved the data using line-based access, but this should be exactly equivalent to the raw file
+        Assert.assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
     }
 
 }

@@ -21,7 +21,9 @@ public class DownloadProtocolMessage extends ProtocolMessage {
         if (!registered.getAndSet(true)) {
             registerSubtypes(
                     new NamedType(StatusChangedMessage.class, "StatusChanged"),
-                    new NamedType(RequestChunkMessage.class, "RequestChunk")
+                    new NamedType(RequestChunkMessage.class, "RequestChunk"),
+                    new NamedType(RequestLinesMessage.class, "RequestLines"),
+                    new NamedType(LinesMessage.class, "Lines")
             );
         }
     }
