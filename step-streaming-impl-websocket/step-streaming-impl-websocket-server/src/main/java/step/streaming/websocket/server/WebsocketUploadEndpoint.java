@@ -103,11 +103,11 @@ public class WebsocketUploadEndpoint extends Endpoint {
         Optional.ofNullable(sessionsHandler).ifPresent(handler -> handler.unregister(session));
         super.onClose(session, closeReason);
         if (resourceId != null) {
-            logger.info("Session closed: {}, resourceId={}, reason={}", session.getId(), resourceId, closeReason);
             // closeReason does NOT properly implement .equals()!!!
             if (closeReason.getCloseCode() == CloseReason.CloseCodes.NORMAL_CLOSURE
                     && closeReason.getReasonPhrase().equals(UploadProtocolMessage.UPLOAD_COMPLETED)
                     && state == State.FINISHED) {
+                logger.debug("Session closed: {}, resourceId={}, reason={}; marking as completed", session.getId(), resourceId, closeReason);
                 manager.markCompleted(resourceId);
             } else {
                 StreamingResourceTransferStatus status = manager.getStatus(resourceId).getTransferStatus();

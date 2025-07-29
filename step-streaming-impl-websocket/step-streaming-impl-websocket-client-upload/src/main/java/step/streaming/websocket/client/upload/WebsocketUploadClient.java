@@ -189,7 +189,7 @@ public class WebsocketUploadClient {
             // uploadFinishedFuture is guaranteed to have completed before FINALIZED state is set
             UploadFinishedMessage finishedMessage = uploadFinishedFuture.join();
             upload.getFinalStatusFuture().complete(new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, finishedMessage.size, finishedMessage.numberOflines));
-        } else {
+        } else if (state != State.CLOSED) { // in case where close workaround was required, ignore second redundant invocation
             logger.warn("{} Unexpected closure of session, reason={}, currently in state {}", this, closeReason, state);
             // terminate open futures if any
             IllegalStateException exception = new IllegalStateException("Client closed, reason=" + closeReason + ", but upload was not completed");
@@ -208,7 +208,7 @@ public class WebsocketUploadClient {
 
     private void onUploadClosed() {
         if (state != State.CLOSED) {
-            logger.warn("{} Upload closed, but client is still in state {}; Closing session abnormally", this, state);
+            logger.warn("{} Upload was closed, but client is still in state {}; Closing session abnormally", this, state);
             closeSessionAbnormally("Upload was unexpectedly closed", null);
         }
     }
