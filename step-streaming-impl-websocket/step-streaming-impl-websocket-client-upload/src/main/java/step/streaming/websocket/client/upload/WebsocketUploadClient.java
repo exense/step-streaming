@@ -134,7 +134,9 @@ public class WebsocketUploadClient {
                 throw new IOException("checksum mismatch: client reported " + clientChecksum + ", but server reported " + serverChecksum);
             }
             state = State.FINALIZED;
-            session.close(new CloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, UploadProtocolMessage.UPLOAD_COMPLETED));
+            CloseReason closeReason = new CloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, UploadProtocolMessage.UPLOAD_COMPLETED);
+            logger.info("About to close session with reason: {}", closeReason);
+            session.close(closeReason);
             // wait until upload is closed too
             upload.getFinalStatusFuture().join();
         } catch (Exception exception) {
@@ -158,7 +160,7 @@ public class WebsocketUploadClient {
     private void onClose(CloseReason closeReason) {
         if (state == State.FINALIZED) {
             // normal closure
-            logger.debug("{} Closing session, reason={}", this, closeReason);
+            logger.info("{} Session closing, reason={}", this, closeReason);
             UploadFinishedMessage finishedMessage = uploadFinishedFuture.join();
             upload.getFinalStatusFuture().complete(new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, finishedMessage.size, finishedMessage.numberOflines));
         } else {
