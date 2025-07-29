@@ -13,6 +13,7 @@ import step.streaming.websocket.protocol.upload.*;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.channels.ClosedChannelException;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -27,6 +28,7 @@ public class WebsocketUploadClient {
         UPLOADING,
         EXPECTING_FINALIZATION,
         FINALIZED,
+        CLOSING,
         CLOSED
     }
 
@@ -39,6 +41,7 @@ public class WebsocketUploadClient {
     // populated in response to finalize message
     private final CompletableFuture<UploadFinishedMessage> uploadFinishedFuture = new CompletableFuture<>();
     private State state;
+    private CloseReason closeReason = null;
 
     @Override
     public String toString() {
@@ -135,9 +138,8 @@ public class WebsocketUploadClient {
                 throw new IOException("checksum mismatch: client reported " + clientChecksum + ", but server reported " + serverChecksum);
             }
             state = State.FINALIZED;
-            // Instead of closing the session from the client side, we ask the server to close it instead.
-            // See https://github.com/jetty/jetty.project/issues/13346 - we are impacted by this on cloud environments
-            session.getBasicRemote().sendText(new CloseSessionMessage().toString());
+            closeSessionNormally();
+
             // wait until the upload is closed too
             upload.getFinalStatusFuture().get(60, TimeUnit.SECONDS);
         } catch (Exception exception) {
@@ -153,13 +155,35 @@ public class WebsocketUploadClient {
         }
     }
 
+    private void closeSessionNormally() throws IOException {
+        state = State.CLOSING;
+        closeReason = new CloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, UploadProtocolMessage.UPLOAD_COMPLETED);
+        logger.info("About to close session {} with reason: {}", session.getId(), closeReason);
+        session.close(closeReason);
+    }
+
     private void onError(Throwable throwable) {
-        logger.error("{} Unexpected error", this, throwable);
-        upload.getFinalStatusFuture().completeExceptionally(throwable);
+        if (throwable instanceof ClosedChannelException && state == State.CLOSING && closeReason != null) {
+            // This is something that seems to only occur in production K8s clusters, it's not really reproducible
+            // locally; seems to be related or at least similar to https://github.com/jetty/jetty.project/issues/13346 .
+            // The symptom is that one side initiates a session close; the other endpoint receives the message
+            // and closes everything correctly, however the initiating client gets an exception instead of actually
+            // closing the session. Presumably it is still waiting for an ACK from the other side (or so), but
+            // something in between (K8s? nginx? ...?) already terminates the TCP connection.
+            // Since we intended to close the session anyway, we can work around this specific situation
+            // by simply swallowing the exception and going on as though the closing worked normally. The Jetty
+            // stack will have been cleaned up at this point, just as in the case of normal closure
+            logger.warn("Channel closed prematurely, employing workaround for closing session");
+            onClose(closeReason);
+        } else {
+            // any other error except the above handled case is fatal
+            logger.error("{} Unexpected error", this, throwable);
+            upload.getFinalStatusFuture().completeExceptionally(throwable);
+        }
     }
 
     private void onClose(CloseReason closeReason) {
-        if (state == State.FINALIZED) {
+        if (state == State.CLOSING) {
             // normal closure
             logger.info("{} Session closing, reason={}", this, closeReason);
             // uploadFinishedFuture is guaranteed to have completed before FINALIZED state is set
