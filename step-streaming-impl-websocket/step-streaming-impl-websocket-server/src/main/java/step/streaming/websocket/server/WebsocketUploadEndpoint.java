@@ -72,6 +72,14 @@ public class WebsocketUploadEndpoint extends Endpoint {
                 // this will implicitly activate error handling, close the session etc.
                 throw new RuntimeException(e);
             }
+        } else if (state == State.FINISHED && clientMessage instanceof CloseSessionMessage) {
+            CloseReason closeReason = new CloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, UploadProtocolMessage.UPLOAD_COMPLETED);
+            logger.info("About to close session {} with reason: {}", session.getId(), closeReason);
+            try {
+                session.close(closeReason);
+            } catch (IOException e) {
+                logger.error("Failed to close session {}", session.getId(), e);
+            }
         } else {
             throw new IllegalArgumentException("Unsupported message in state " + state + ": " + messageString);
         }

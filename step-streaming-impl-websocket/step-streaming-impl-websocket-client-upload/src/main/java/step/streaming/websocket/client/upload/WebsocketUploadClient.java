@@ -84,7 +84,8 @@ public class WebsocketUploadClient {
         state = State.EXPECTING_REFERENCE;
         session.getBasicRemote().sendText(request.toString());
         try {
-            StreamingResourceReference reference = referenceFuture.get(5, TimeUnit.SECONDS);
+            // response is usually immediate, but allow for a little more time (though not unlimited)
+            StreamingResourceReference reference = referenceFuture.get(60, TimeUnit.SECONDS);
             upload.setUploadReference(reference);
             upload.setCurrentUploadStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L, null));
             state = State.UPLOADING;
@@ -127,18 +128,18 @@ public class WebsocketUploadClient {
             outputStream.close();
             logger.debug("{} Data sent: {} bytes", this, bytesSent);
             state = State.EXPECTING_FINALIZATION;
-            UploadFinishedMessage finished = uploadFinishedFuture.get();
+            UploadFinishedMessage finished = uploadFinishedFuture.get(60, TimeUnit.SECONDS);
             String clientChecksum = outputStream.getChecksum();
             String serverChecksum = finished.checksum;
             if (!clientChecksum.equals(serverChecksum)) {
                 throw new IOException("checksum mismatch: client reported " + clientChecksum + ", but server reported " + serverChecksum);
             }
             state = State.FINALIZED;
-            CloseReason closeReason = new CloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, UploadProtocolMessage.UPLOAD_COMPLETED);
-            logger.info("About to close session with reason: {}", closeReason);
-            session.close(closeReason);
-            // wait until upload is closed too
-            upload.getFinalStatusFuture().join();
+            // Instead of closing the session from the client side, we ask the server to close it instead.
+            // See https://github.com/jetty/jetty.project/issues/13346 - we are impacted by this on cloud environments
+            session.getBasicRemote().sendText(new CloseSessionMessage().toString());
+            // wait until the upload is closed too
+            upload.getFinalStatusFuture().get(60, TimeUnit.SECONDS);
         } catch (Exception exception) {
             closeCloseableOnException(inputStream, exception);
             closeCloseableOnException(outputStream, exception);
@@ -161,6 +162,7 @@ public class WebsocketUploadClient {
         if (state == State.FINALIZED) {
             // normal closure
             logger.info("{} Session closing, reason={}", this, closeReason);
+            // uploadFinishedFuture is guaranteed to have completed before FINALIZED state is set
             UploadFinishedMessage finishedMessage = uploadFinishedFuture.join();
             upload.getFinalStatusFuture().complete(new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, finishedMessage.size, finishedMessage.numberOflines));
         } else {

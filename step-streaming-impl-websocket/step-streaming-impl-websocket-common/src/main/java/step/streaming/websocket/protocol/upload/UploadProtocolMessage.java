@@ -25,7 +25,8 @@ public class UploadProtocolMessage extends ProtocolMessage {
                     // that leads to a "potential JVM deadlock" warning
                     new NamedType(RequestUploadStartMessage.class, "RequestUploadStart"),
                     new NamedType(ReadyForUploadMessage.class, "ReadyForUpload"),
-                    new NamedType(UploadFinishedMessage.class, "UploadFinished")
+                    new NamedType(UploadFinishedMessage.class, "UploadFinished"),
+                    new NamedType(CloseSessionMessage.class, "CloseSession")
             );
         }
     }

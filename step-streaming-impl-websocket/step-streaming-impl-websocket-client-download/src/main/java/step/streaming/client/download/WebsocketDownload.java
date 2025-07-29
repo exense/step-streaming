@@ -72,6 +72,7 @@ public class WebsocketDownload extends AbstractTransfer implements StreamingDown
                 if (!future.isDone()) {
                     future.complete(new AtomicReference<>(status));
                 } else {
+                    // join() will return immediately as the future is already completed, we're simply updating the value
                     future.join().set(status);
                 }
             }
