@@ -159,7 +159,8 @@ public class WebsocketUploadClient {
         if (state == State.FINALIZED) {
             // normal closure
             logger.debug("{} Closing session, reason={}", this, closeReason);
-            upload.getFinalStatusFuture().complete(new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, uploadFinishedFuture.join().finalSize, null));
+            UploadFinishedMessage finishedMessage = uploadFinishedFuture.join();
+            upload.getFinalStatusFuture().complete(new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, finishedMessage.size, finishedMessage.numberOflines));
         } else {
             logger.warn("{} Unexpected closure of session, reason={}, currently in state {}", this, closeReason, state);
             // terminate open futures if any

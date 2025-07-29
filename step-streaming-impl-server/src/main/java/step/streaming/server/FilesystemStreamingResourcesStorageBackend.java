@@ -65,6 +65,7 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
         }
         this.flushAndNotifyIntervalMillis = flushAndNotifyIntervalMillis;
         this.paranoidSyncMode = paranoidSyncMode;
+        logger.info("Initialized storage backend: baseDirectory={}, hashIdsBeforeStoring={}, flushAndNotifyIntervalMillis={}, paranoidSyncMode={}", baseDirectory, hashIdsBeforeStoring, flushAndNotifyIntervalMillis, paranoidSyncMode);
     }
 
     private File validateBaseDirectory(File baseDir) {

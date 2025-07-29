@@ -17,7 +17,6 @@ import java.io.RandomAccessFile;
 public class FileChunkOutputStream extends OutputStream {
 
     private final RandomAccessFile raf;
-    private final boolean syncOnFlush; // ensures that flush() syncs the raf when not in paranoid mode (unnecessary otherwise)
 
     /**
      * Creates a new chunked output stream for the given file.
@@ -32,7 +31,6 @@ public class FileChunkOutputStream extends OutputStream {
             throw new IllegalArgumentException("Start position must be non-negative");
         }
         this.raf = new RandomAccessFile(file, paranoidSync ? "rwd" : "rw");
-        this.syncOnFlush = !paranoidSync;
         raf.seek(startPosition);
     }
 
@@ -44,13 +42,6 @@ public class FileChunkOutputStream extends OutputStream {
     @Override
     public void write(byte[] b, int off, int len) throws IOException {
         raf.write(b, off, len);
-    }
-
-    @Override
-    public void flush() throws IOException {
-        if (syncOnFlush) {
-            raf.getFD().sync();
-        }
     }
 
     @Override

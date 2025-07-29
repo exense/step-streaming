@@ -4,12 +4,14 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class UploadFinishedMessage extends UploadServerMessage {
-    public final long finalSize;
+    public final long size;
+    public final Long numberOflines;
     public final String checksum;
 
     @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
-    public UploadFinishedMessage(@JsonProperty("finalSize") long finalSize, @JsonProperty("checksum") String checksum) {
-        this.finalSize = finalSize;
+    public UploadFinishedMessage(@JsonProperty("size") long size, @JsonProperty("numberOfLines") Long numberOflines, @JsonProperty("checksum") String checksum) {
+        this.size = size;
+        this.numberOflines = numberOflines;
         this.checksum = checksum;
     }
 }

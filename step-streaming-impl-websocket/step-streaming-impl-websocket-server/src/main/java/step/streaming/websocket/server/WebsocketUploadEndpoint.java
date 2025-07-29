@@ -6,10 +6,7 @@ import jakarta.websocket.EndpointConfig;
 import jakarta.websocket.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import step.streaming.common.StreamingResourceMetadata;
-import step.streaming.common.StreamingResourceReference;
-import step.streaming.common.StreamingResourceTransferStatus;
-import step.streaming.common.StreamingResourceUploadContext;
+import step.streaming.common.*;
 import step.streaming.data.MD5CalculatingInputStream;
 import step.streaming.server.StreamingResourceManager;
 import step.streaming.websocket.protocol.upload.*;
@@ -87,9 +84,14 @@ public class WebsocketUploadEndpoint extends Endpoint {
         try {
             MD5CalculatingInputStream md5Input = new MD5CalculatingInputStream(input);
             long bytesWritten = manager.writeChunk(resourceId, md5Input);
-            logger.info("Wrote {} bytes to {}, checksum={}; sending finished message", bytesWritten, resourceId, md5Input.getChecksum());
+            StreamingResourceStatus status = manager.getStatus(resourceId);
+            if (!status.getCurrentSize().equals(bytesWritten)) {
+                throw new IllegalStateException("Unexpected size mismatch: bytesWritten=" + bytesWritten + ", but status indicates current size=" + status.getCurrentSize());
+            }
+            String checksum = md5Input.getChecksum();
+            logger.info("Wrote {} bytes to {}, checksum={}, numberOfLines={}; sending finished message", bytesWritten, resourceId, checksum, status.getNumberOfLines());
             state = State.FINISHED;
-            session.getBasicRemote().sendText(new UploadFinishedMessage(bytesWritten, md5Input.getChecksum()).toString());
+            session.getBasicRemote().sendText(new UploadFinishedMessage(bytesWritten, status.getNumberOfLines(), checksum).toString());
         } catch (IOException e) {
             logger.error("Error while uploading data", e);
             throw new RuntimeException(e);

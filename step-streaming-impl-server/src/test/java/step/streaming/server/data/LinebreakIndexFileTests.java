@@ -1,6 +1,7 @@
 package step.streaming.server.data;
 
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -40,10 +41,10 @@ public class LinebreakIndexFileTests {
     }
 
     @Test
-    public void testTooLargeValue() throws Exception{
+    public void testTooLargeValue() throws Exception {
         LinebreakIndexFile index = new LinebreakIndexFile(rawIndexFile, 0, LinebreakIndexFile.Mode.WRITE);
-        index.addLinebreakPosition(1L << 40 -1); // 0xFFFFFFFFFF, largest possible value
-        assertEquals(1L << 40 -1, index.getLinebreakPosition(0));
+        index.addLinebreakPosition(1L << 40 - 1); // 0xFFFFFFFFFF, largest possible value
+        assertEquals(1L << 40 - 1, index.getLinebreakPosition(0));
         try {
             index.addLinebreakPosition(1L << 40); // 0x10000000000, too big
             fail("Expected an exception");
@@ -160,6 +161,36 @@ public class LinebreakIndexFileTests {
         readerThread.join();
 
         writer.close();
+    }
+
+    @Test
+    public void performanceTest() throws Exception {
+        long count = 1_000_000L;
+        try(LinebreakIndexFile index = new LinebreakIndexFile(rawIndexFile, 0, LinebreakIndexFile.Mode.WRITE)) {
+            long d = System.currentTimeMillis();
+            for (long i = 0; i < count; ++i) {
+                Assert.assertEquals(i + 1, index.addLinebreakPosition(i));
+            }
+            d = System.currentTimeMillis() - d;
+            System.out.printf("writing %d entries took %d ms%n", count, d);
+            // usually around 1.5-2 seconds
+            Assert.assertTrue("Writing data took more than 10 seconds", d < 10000);
+
+            d = System.currentTimeMillis();
+            Assert.assertEquals(count, index.getLinebreakPositions(0, count).count());
+            d = System.currentTimeMillis() - d;
+            System.out.printf("reading %d entries sequentially took %d ms%n", count, d);
+            // usually around 150-200 ms
+            Assert.assertTrue("Reading data took more than 2 seconds", d < 2000);
+            d = System.currentTimeMillis();
+            for (long i = count - 1; i >= 0; --i) {
+                Assert.assertEquals(i, index.getLinebreakPosition(i));
+            }
+            d = System.currentTimeMillis() - d;
+            System.out.printf("reading %d entries in reverse order took %d ms%n", count, d);
+            // usually around 350 ms
+            Assert.assertTrue("Reading data (reverse order) took more than 3 seconds", d < 3000);
+        }
     }
 
 

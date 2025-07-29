@@ -227,6 +227,7 @@ public class StreamingResourceEndpointTests {
         File sourceFile = new File(url.toURI());
         long INPUT_DATA_SIZE = 10171; // in ISO-8859-1 format
         long OUTPUT_DATA_SIZE = 10324; // in UTF-8 format, i.e. what is expected to arrive server-side
+        Long OUTPUT_LINES = 296L;
         FileBytesProducer isoBytesProducer = new FileBytesProducer(sourceFile, 5, TimeUnit.SECONDS);
 
         TestingWebsocketServer server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
@@ -255,7 +256,11 @@ public class StreamingResourceEndpointTests {
         downloadThread.start();
         Assert.assertEquals(INPUT_DATA_SIZE, isoBytesProducer.produce());
         Assert.assertEquals(INPUT_DATA_SIZE, isoBytesProducer.file.length());
-        logger.info("UPLOAD FINAL STATUS: {}", upload.signalEndOfInput().get());
+        StreamingResourceStatus finalUploadStatus = upload.signalEndOfInput().get();
+        logger.info("UPLOAD FINAL STATUS: {}", finalUploadStatus);
+        Assert.assertEquals(OUTPUT_LINES, finalUploadStatus.getNumberOfLines());
+        Assert.assertEquals(OUTPUT_DATA_SIZE, finalUploadStatus.getCurrentSize().longValue());
+        Assert.assertEquals(StreamingResourceTransferStatus.COMPLETED, finalUploadStatus.getTransferStatus());
         upload.close(); // optional
         downloadThread.join();
         Assert.assertEquals(FAUST_ISO8859_CHECKSUM, isoBytesProducer.checksum);

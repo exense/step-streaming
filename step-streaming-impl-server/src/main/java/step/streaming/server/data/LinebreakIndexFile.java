@@ -12,7 +12,8 @@ import java.util.stream.Stream;
  * A file representing a simple index about where linebreaks occur in a text file.
  * This implementation uses a trivial data layout, where line break positions are
  * expected to be added in a sequential fashion, and are stored in raw binary format
- * in a file. Each entry is saved in 40-bit format (big-endian), thus allowing for a
+ * in a file (basically an on-disk array representation)
+ * Each entry is saved in 5-bytes/40-bit format (big-endian), thus allowing for a
  * maximum offset of 1,099,511,627,775 i.e. 1 Terabyte.
  * <p>
  * Index files are created for a given datafile, and they reuse the datafile name and location,
@@ -116,7 +117,6 @@ public class LinebreakIndexFile implements AutoCloseable, LinebreakIndex {
     public long addLinebreakPosition(Long linebreakPosition) throws IOException {
         encodeToBuffer(linebreakPosition + baseOffset);
         raf.write(entryBuffer);
-        raf.getFD().sync(); // ensure metadata is synced to disk
         return getTotalEntries();
     }
 
