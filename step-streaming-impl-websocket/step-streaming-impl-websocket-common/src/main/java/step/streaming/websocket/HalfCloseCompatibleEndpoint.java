@@ -35,6 +35,16 @@ public abstract class HalfCloseCompatibleEndpoint extends Endpoint {
     private volatile CloseReason closeReason;
     private volatile boolean closed = false;
 
+    /**
+     * Closes the Websocket socket session in a manner that is compatible with the half-close workaround.
+     * <p>
+     * <b>Implementations MUST use this method instead of invoking {@code session.close()} directly.</b>
+     *
+     * @param session     session to close
+     * @param closeReason close reason
+     * @throws IOException on error
+     * @see Session#close(CloseReason) 
+     */
     public final void closeSession(Session session, CloseReason closeReason) throws IOException {
         this.closeReason = closeReason;
         session.close(closeReason);
