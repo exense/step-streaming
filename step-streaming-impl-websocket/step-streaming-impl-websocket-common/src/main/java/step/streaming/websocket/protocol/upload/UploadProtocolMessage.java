@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * indicate which end of the connection produces the messages.
  */
 public class UploadProtocolMessage extends ProtocolMessage {
-    public static final String UPLOAD_COMPLETED = "Upload completed";
+    public static final String CLOSEREASON_PHRASE_UPLOAD_COMPLETED = "Upload completed";
 
     private static final AtomicBoolean registered = new AtomicBoolean(false);
     static {

@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import step.streaming.common.*;
 import step.streaming.data.MD5CalculatingInputStream;
 import step.streaming.server.StreamingResourceManager;
+import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.upload.*;
 
 import java.io.IOException;
@@ -16,7 +17,7 @@ import java.io.InputStream;
 import java.util.List;
 import java.util.Optional;
 
-public class WebsocketUploadEndpoint extends Endpoint {
+public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     public static final String DEFAULT_ENDPOINT_URL = "/ws/streaming/upload";
 
 
@@ -99,13 +100,12 @@ public class WebsocketUploadEndpoint extends Endpoint {
     }
 
     @Override
-    public void onClose(Session session, CloseReason closeReason) {
+    public void onSessionClose(Session session, CloseReason closeReason) {
         Optional.ofNullable(sessionsHandler).ifPresent(handler -> handler.unregister(session));
         super.onClose(session, closeReason);
         if (resourceId != null) {
-            // closeReason does NOT properly implement .equals()!!!
             if (closeReason.getCloseCode() == CloseReason.CloseCodes.NORMAL_CLOSURE
-                    && closeReason.getReasonPhrase().equals(UploadProtocolMessage.UPLOAD_COMPLETED)
+                    && closeReason.getReasonPhrase().equals(UploadProtocolMessage.CLOSEREASON_PHRASE_UPLOAD_COMPLETED)
                     && state == State.FINISHED) {
                 logger.debug("Session closed: {}, resourceId={}, reason={}; marking as completed", session.getId(), resourceId, closeReason);
                 manager.markCompleted(resourceId);
@@ -122,7 +122,7 @@ public class WebsocketUploadEndpoint extends Endpoint {
     @Override
     // This is invoked by the websocket framework whenever an exception occurs.
     // it will close the session (abnormally) afterward.
-    public void onError(Session session, Throwable throwable) {
+    public void onSessionError(Session session, Throwable throwable) {
         logger.error("Session {}, resourceId {}, state {} : unexpected error", session.getId(), resourceId, state, throwable);
     }
 }

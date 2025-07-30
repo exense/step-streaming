@@ -38,5 +38,12 @@
             <artifactId>jakarta.websocket-api</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>org.eclipse.jetty.toolchain</groupId>
+            <artifactId>jetty-jakarta-websocket-api</artifactId>
+            <!-- FIXME: move this to step-dependencies too -->
+            <version>2.0.0</version>
+        </dependency>
+
     </dependencies>
 </project>

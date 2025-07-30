@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
+import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.download.*;
 
 import java.io.IOException;
@@ -40,6 +41,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
     private final List<Consumer<StreamingResourceStatus>> statusListeners = new CopyOnWriteArrayList<>(
             List.of(initialStatus::complete, lastReceivedStatus::set));
     private final List<Runnable> closeListeners = new CopyOnWriteArrayList<>();
+    private Remote endpoint;
     private State state;
     private Consumer<InputStream> dataConsumer;
     private Consumer<List<String>> linesConsumer;
@@ -62,7 +64,8 @@ public class WebsocketDownloadClient implements AutoCloseable {
 
     private Session connect(URI websocketUri, WebSocketContainer container) throws IOException {
         try {
-            return container.connectToServer(new Remote(), ClientEndpointConfig.Builder.create().build(), websocketUri);
+            endpoint = new Remote();
+            return container.connectToServer(endpoint, ClientEndpointConfig.Builder.create().build(), websocketUri);
         } catch (DeploymentException e) {
             throw new IOException(e);
         }
@@ -219,7 +222,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
                 if (state != State.READY) {
                     logger.warn("Closing session while in state {}, this may cause erroneous behaviour", state);
                 }
-                session.close(new CloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, "Client Session closed"));
+                endpoint.closeSession(session, new CloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, "Client Session closed"));
             }
             state = State.CLOSED;
         }
@@ -236,7 +239,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
         statusListeners.remove(statusListener);
     }
 
-    private class Remote extends Endpoint {
+    private class Remote extends HalfCloseCompatibleEndpoint {
         @Override
         public void onOpen(Session session, EndpointConfig config) {
             // No timeout; server side takes care of keepalive messages
@@ -246,12 +249,12 @@ public class WebsocketDownloadClient implements AutoCloseable {
         }
 
         @Override
-        public void onClose(Session session, CloseReason closeReason) {
+        public void onSessionClose(Session session, CloseReason closeReason) {
             self.onClose(closeReason);
         }
 
         @Override
-        public void onError(Session session, Throwable throwable) {
+        public void onSessionError(Session session, Throwable throwable) {
             self.onError(throwable);
         }
     }

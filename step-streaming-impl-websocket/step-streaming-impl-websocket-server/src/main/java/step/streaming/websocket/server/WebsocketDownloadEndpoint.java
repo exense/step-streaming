@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.data.CheckpointingOutputStream;
 import step.streaming.server.StreamingResourceManager;
+import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.download.*;
 
 import java.io.IOException;
@@ -22,7 +23,7 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public class WebsocketDownloadEndpoint extends Endpoint {
+public class WebsocketDownloadEndpoint extends HalfCloseCompatibleEndpoint {
     public static final String DEFAULT_ENDPOINT_URL = "/ws/streaming/download/{id}";
     public static final String DEFAULT_PARAMETER_NAME = "id";
 
@@ -147,14 +148,14 @@ public class WebsocketDownloadEndpoint extends Endpoint {
 
 
     @Override
-    public void onClose(Session session, CloseReason closeReason) {
+    public void onSessionClose(Session session, CloseReason closeReason) {
         logger.debug("Session closed: {}, resource={}, reason={}", session.getId(), resourceId, closeReason);
         manager.unregisterStatusListener(resourceId, statusChangeListener);
         Optional.ofNullable(sessionsHandler).ifPresent(h -> h.unregister(session));
     }
 
     @Override
-    public void onError(Session session, Throwable thr) {
+    public void onSessionError(Session session, Throwable thr) {
         super.onError(session, thr);
     }
 }

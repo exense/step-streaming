@@ -8,6 +8,7 @@ import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
 import step.streaming.data.CheckpointingOutputStream;
 import step.streaming.data.MD5CalculatingOutputStream;
+import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.upload.*;
 
 import java.io.IOException;
@@ -28,7 +29,6 @@ public class WebsocketUploadClient {
         UPLOADING,
         EXPECTING_FINALIZATION,
         FINALIZED,
-        CLOSING,
         CLOSED
     }
 
@@ -41,7 +41,7 @@ public class WebsocketUploadClient {
     // populated in response to finalize message
     private final CompletableFuture<UploadFinishedMessage> uploadFinishedFuture = new CompletableFuture<>();
     private State state;
-    private CloseReason closeReason = null;
+    private Remote endpoint;
 
     @Override
     public String toString() {
@@ -65,7 +65,8 @@ public class WebsocketUploadClient {
 
     private Session connect(URI websocketUri, WebSocketContainer container) throws IOException {
         try {
-            return container.connectToServer(new Remote(), ClientEndpointConfig.Builder.create().build(), websocketUri);
+            endpoint = new Remote();
+            return container.connectToServer(endpoint, ClientEndpointConfig.Builder.create().build(), websocketUri);
         } catch (DeploymentException e) {
             throw new IOException(e);
         }
@@ -156,40 +157,24 @@ public class WebsocketUploadClient {
     }
 
     private void closeSessionNormally() throws IOException {
-        state = State.CLOSING;
-        closeReason = new CloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, UploadProtocolMessage.UPLOAD_COMPLETED);
-        logger.info("About to close session {} with reason: {}", session.getId(), closeReason);
-        session.close(closeReason);
+        CloseReason closeReason = new CloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, UploadProtocolMessage.CLOSEREASON_PHRASE_UPLOAD_COMPLETED);
+        logger.debug("About to close session {} with reason: {}", session.getId(), closeReason);
+        endpoint.closeSession(session, closeReason);
     }
 
     private void onError(Throwable throwable) {
-        if (throwable instanceof ClosedChannelException && state == State.CLOSING && closeReason != null) {
-            // This is something that seems to only occur in production K8s clusters, it's not really reproducible
-            // locally; seems to be related or at least similar to https://github.com/jetty/jetty.project/issues/13346 .
-            // The symptom is that one side initiates a session close; the other endpoint receives the message
-            // and closes everything correctly, however the initiating client gets an exception instead of actually
-            // closing the session. Presumably it is still waiting for an ACK from the other side (or so), but
-            // something in between (K8s? nginx? ...?) already terminates the TCP connection.
-            // Since we intended to close the session anyway, we can work around this specific situation
-            // by simply swallowing the exception and going on as though the closing worked normally. The Jetty
-            // stack will have been cleaned up at this point, just as in the case of normal closure
-            logger.warn("Channel closed prematurely, employing workaround for closing session");
-            onClose(closeReason);
-        } else {
-            // any other error except the above handled case is fatal
-            logger.error("{} Unexpected error", this, throwable);
-            upload.getFinalStatusFuture().completeExceptionally(throwable);
-        }
+        logger.error("{} Unexpected error", this, throwable);
+        upload.getFinalStatusFuture().completeExceptionally(throwable);
     }
 
     private void onClose(CloseReason closeReason) {
-        if (state == State.CLOSING) {
+        if (state == State.FINALIZED) {
             // normal closure
             logger.info("{} Session closing, reason={}", this, closeReason);
             // uploadFinishedFuture is guaranteed to have completed before FINALIZED state is set
             UploadFinishedMessage finishedMessage = uploadFinishedFuture.join();
             upload.getFinalStatusFuture().complete(new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, finishedMessage.size, finishedMessage.numberOflines));
-        } else if (state != State.CLOSED) { // in case where close workaround was required, ignore second redundant invocation
+        } else {
             logger.warn("{} Unexpected closure of session, reason={}, currently in state {}", this, closeReason, state);
             // terminate open futures if any
             IllegalStateException exception = new IllegalStateException("Client closed, reason=" + closeReason + ", but upload was not completed");
@@ -214,7 +199,7 @@ public class WebsocketUploadClient {
     }
 
 
-    private class Remote extends Endpoint {
+    private class Remote extends HalfCloseCompatibleEndpoint {
         @Override
         public void onOpen(Session session, EndpointConfig config) {
             // No timeout; server side takes care of keepalive messages
@@ -223,12 +208,12 @@ public class WebsocketUploadClient {
         }
 
         @Override
-        public void onClose(Session session, CloseReason closeReason) {
+        public void onSessionClose(Session session, CloseReason closeReason) {
             self.onClose(closeReason);
         }
 
         @Override
-        public void onError(Session session, Throwable throwable) {
+        public void onSessionError(Session session, Throwable throwable) {
             self.onError(throwable);
         }
     }
