@@ -4,6 +4,7 @@ import step.streaming.common.StreamingResourceReference;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
 
+import java.io.IOException;
 import java.util.function.Consumer;
 
 /**
@@ -49,4 +50,7 @@ public interface StreamingTransfer extends AutoCloseable {
      * @param callback the listener to remove
      */
     void unregisterStatusChangeListener(Consumer<StreamingResourceStatus> callback);
+
+    @Override
+    void close() throws IOException;
 }

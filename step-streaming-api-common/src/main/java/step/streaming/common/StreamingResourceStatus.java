@@ -59,7 +59,7 @@ public class StreamingResourceStatus {
      *
      * @return the current size
      */
-    public Long getCurrentSize() {
+    public long getCurrentSize() {
         return currentSize;
     }
 

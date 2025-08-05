@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 
 /**
- * An upload provider acts as a factory to create {@link step.streaming.client.upload.StreamingUpload} instances.
+ * An upload provider acts as a factory to create {@link StreamingUploadSession} instances.
  * It is named "provider" instead of "factory" because that less technical term better conveys the intentions.
  */
 public interface StreamingUploadProvider {
@@ -22,12 +22,12 @@ public interface StreamingUploadProvider {
      *
      * @param fileToStream file to upload
      * @param metadata     file metadata, i.e., file name and type
-     * @return a {@link StreamingUpload} instance.
+     * @return a {@link StreamingUploadSession} instance.
      * @throws IOException if the file was not found or another IO error occurred.
-     * @see StreamingUpload#signalEndOfInput()
+     * @see StreamingUploadSession#signalEndOfInput()
      * @see StreamingUploadProvider#startLiveTextFileUpload(File, StreamingResourceMetadata, Charset) for uploading textual data
      */
-    StreamingUpload startLiveBinaryFileUpload(File fileToStream, StreamingResourceMetadata metadata) throws IOException;
+    StreamingUploadSession startLiveBinaryFileUpload(File fileToStream, StreamingResourceMetadata metadata) throws IOException;
 
     /**
      * Starts a streaming upload of a text file. The file must exist at invocation time, but it may not be fully written
@@ -42,11 +42,11 @@ public interface StreamingUploadProvider {
      * @param textFile file to upload
      * @param metadata file metadata, i.e., file name and type
      * @param charset  the Charset/encoding of the file.
-     * @return a {@link StreamingUpload} instance.
+     * @return a {@link StreamingUploadSession} instance.
      * @throws IOException if the file was not found or another IO error occurred.
-     * @see StreamingUpload#signalEndOfInput()
+     * @see StreamingUploadSession#signalEndOfInput()
      * @see StreamingUploadProvider#startLiveBinaryFileUpload(File, StreamingResourceMetadata) for uploading binary files.
      */
-    StreamingUpload startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws IOException;
+    StreamingUploadSession startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws IOException;
 
 }

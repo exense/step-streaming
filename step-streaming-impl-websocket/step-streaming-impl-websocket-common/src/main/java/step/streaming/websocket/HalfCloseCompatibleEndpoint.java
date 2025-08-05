@@ -46,8 +46,11 @@ public abstract class HalfCloseCompatibleEndpoint extends Endpoint {
      * @see Session#close(CloseReason) 
      */
     public final void closeSession(Session session, CloseReason closeReason) throws IOException {
-        this.closeReason = closeReason;
-        session.close(closeReason);
+        // this might be invoked multiple times (e.g. on errors); only react the first time
+        if (this.closeReason == null) {
+            this.closeReason = closeReason;
+            session.close(closeReason);
+        }
     }
 
     /**

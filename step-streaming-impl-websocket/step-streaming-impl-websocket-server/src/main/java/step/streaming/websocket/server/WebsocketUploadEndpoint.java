@@ -1,9 +1,9 @@
 package step.streaming.websocket.server;
 
 import jakarta.websocket.CloseReason;
-import jakarta.websocket.Endpoint;
 import jakarta.websocket.EndpointConfig;
 import jakarta.websocket.Session;
+import org.eclipse.jetty.websocket.core.exception.CloseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.*;
@@ -24,6 +24,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     private enum State {
         EXPECTING_METADATA,
         UPLOADING,
+        EXPECTING_FINISHEDMESSAGE,
         FINISHED,
     }
 
@@ -33,6 +34,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
 
     protected Session session;
     private State state;
+    private UploadAcknowledgedMessage uploadAcknowledgedMessage; // sent to client once upload is finished
 
     protected String resourceId;
     protected String uploadContextId;
@@ -61,8 +63,8 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             logger.trace("Message received: {}", messageString);
         }
         UploadClientMessage clientMessage = UploadClientMessage.fromString(messageString);
-        if (state == State.EXPECTING_METADATA && clientMessage instanceof RequestUploadStartMessage) {
-            StreamingResourceMetadata metadata = ((RequestUploadStartMessage) clientMessage).metadata;
+        if (state == State.EXPECTING_METADATA && clientMessage instanceof StartUploadMessage) {
+            StreamingResourceMetadata metadata = ((StartUploadMessage) clientMessage).metadata;
             try {
                 resourceId = manager.registerNewResource(metadata, uploadContextId);
                 StreamingResourceReference reference = manager.getReferenceFor(resourceId);
@@ -73,6 +75,23 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 // this will implicitly activate error handling, close the session etc.
                 throw new RuntimeException(e);
             }
+        } else if (state == State.EXPECTING_FINISHEDMESSAGE && clientMessage instanceof FinishUploadMessage) {
+            FinishUploadMessage finishMessage = (FinishUploadMessage) clientMessage;
+            if (uploadAcknowledgedMessage == null) {
+                // should never happen
+                throw new IllegalStateException("unexpected state: uploadAcknowledgedMessage is null");
+            }
+            if (!uploadAcknowledgedMessage.checksum.equals(finishMessage.checksum)) {
+                throw new RuntimeException(
+                        String.format("Checksum mismatch after upload! Client checksum=%s, server checksum=%s",
+                                finishMessage.checksum, uploadAcknowledgedMessage.checksum));
+            }
+            try {
+                session.getBasicRemote().sendText(uploadAcknowledgedMessage.toString());
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            state = State.FINISHED;
         } else {
             throw new IllegalArgumentException("Unsupported message in state " + state + ": " + messageString);
         }
@@ -86,13 +105,13 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             MD5CalculatingInputStream md5Input = new MD5CalculatingInputStream(input);
             long bytesWritten = manager.writeChunk(resourceId, md5Input);
             StreamingResourceStatus status = manager.getStatus(resourceId);
-            if (!status.getCurrentSize().equals(bytesWritten)) {
+            if (status.getCurrentSize() != bytesWritten) {
                 throw new IllegalStateException("Unexpected size mismatch: bytesWritten=" + bytesWritten + ", but status indicates current size=" + status.getCurrentSize());
             }
             String checksum = md5Input.getChecksum();
             logger.info("Wrote {} bytes to {}, checksum={}, numberOfLines={}; sending finished message", bytesWritten, resourceId, checksum, status.getNumberOfLines());
-            state = State.FINISHED;
-            session.getBasicRemote().sendText(new UploadFinishedMessage(bytesWritten, status.getNumberOfLines(), checksum).toString());
+            state = State.EXPECTING_FINISHEDMESSAGE;
+            uploadAcknowledgedMessage = new UploadAcknowledgedMessage(bytesWritten, status.getNumberOfLines(), checksum);
         } catch (IOException e) {
             logger.error("Error while uploading data", e);
             throw new RuntimeException(e);

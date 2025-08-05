@@ -4,8 +4,7 @@ import step.streaming.client.StreamingTransfer;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.data.EndOfInputSignal;
 
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.*;
 
 /**
  * High-level interface for handling uploads.
@@ -20,15 +19,19 @@ import java.util.concurrent.CompletableFuture;
  * will not be able to reliably interrupt the upload, and the signaling
  * methods will effectively be a no-op.
  *
- * @see StreamingUpload#getEndOfInputSignal()
+ * @see StreamingUploadSession#getEndOfInputSignal()
  */
-public interface StreamingUpload extends StreamingTransfer {
+public interface StreamingUploadSession extends StreamingTransfer {
     /**
      * Returns a future indicating the final status of the upload.
      * This future may be completed successfully, or exceptionally.
      * @return a future indicating the final status of the upload.
      */
     CompletableFuture<StreamingResourceStatus> getFinalStatusFuture();
+
+    default StreamingResourceStatus getFinalStatus() {
+        return getFinalStatusFuture().join();
+    }
 
     /**
      * Indicates whether this upload uses an end-of-input signal.
@@ -47,29 +50,25 @@ public interface StreamingUpload extends StreamingTransfer {
     EndOfInputSignal getEndOfInputSignal();
 
     /**
-     * Convenience method to signal end of input, and retrieve the final status future at the same time.
-     * @return the final status future
+     * Explicitly signals that the input file is complete.
      */
-    default CompletableFuture<StreamingResourceStatus> signalEndOfInput() {
+    default void signalEndOfInput() {
         if (hasEndOfInputSignal()) getEndOfInputSignal().complete(null);
-        return getFinalStatusFuture();
     }
 
     /** Cancels the upload by signaling an exception on the end-of-input signal.
-     *
-     * @return the final status future
      */
-    default CompletableFuture<StreamingResourceStatus> cancel() {
-        return cancel(new CancellationException("Cancelled by user"));
+    default void cancel() {
+        cancel(new CancellationException("Cancelled by user"));
     }
 
     /** Cancels the upload by signaling a user-supplied exception on the end-of-input signal.
      *
      * @param cause cancellation cause
-     * @return the final status future
      */
-    default CompletableFuture<StreamingResourceStatus> cancel(Exception cause) {
-        if (hasEndOfInputSignal()) getEndOfInputSignal().completeExceptionally(cause);
-        return getFinalStatusFuture();
+    default void cancel(Exception cause) {
+        if (hasEndOfInputSignal()) {
+            getEndOfInputSignal().completeExceptionally(cause);
+        }
     }
 }

@@ -4,11 +4,11 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import step.streaming.common.StreamingResourceMetadata;
 
-public class RequestUploadStartMessage extends UploadClientMessage {
-    public final StreamingResourceMetadata metadata;
+public class FinishUploadMessage extends UploadClientMessage {
+    public final String checksum;
 
     @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
-    public RequestUploadStartMessage(@JsonProperty("metadata") StreamingResourceMetadata metadata) {
-        this.metadata = metadata;
+    public FinishUploadMessage(@JsonProperty("checksum") String checksum) {
+        this.checksum = checksum;
     }
 }

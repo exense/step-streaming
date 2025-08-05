@@ -23,9 +23,10 @@ public class UploadProtocolMessage extends ProtocolMessage {
             registerSubtypes(
                     // unfortunately we cannot put the names as constants in the subclasses, as
                     // that leads to a "potential JVM deadlock" warning
-                    new NamedType(RequestUploadStartMessage.class, "RequestUploadStart"),
+                    new NamedType(StartUploadMessage.class, "StartUpload"),
                     new NamedType(ReadyForUploadMessage.class, "ReadyForUpload"),
-                    new NamedType(UploadFinishedMessage.class, "UploadFinished")
+                    new NamedType(FinishUploadMessage.class, "FinishUpload"),
+                    new NamedType(UploadAcknowledgedMessage.class, "UploadAcknowledged")
             );
         }
     }

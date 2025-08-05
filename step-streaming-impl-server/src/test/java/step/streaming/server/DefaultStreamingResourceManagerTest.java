@@ -116,7 +116,7 @@ public class DefaultStreamingResourceManagerTest {
 
         assertEquals(StreamingResourceTransferStatus.COMPLETED, final1.getTransferStatus());
         assertEquals(final1, final2);
-        assertEquals(100, final1.getCurrentSize().longValue());
+        assertEquals(100, final1.getCurrentSize());
     }
 
     @Test
@@ -150,7 +150,7 @@ public class DefaultStreamingResourceManagerTest {
         StreamingResourceStatus finalStatus = listenerEvents.get(listenerEvents.size() - 1);
         assertEquals(StreamingResourceTransferStatus.FAILED, finalStatus.getTransferStatus());
         // we still expect failed resources to keep their last "successful" size
-        assertEquals(30L, finalStatus.getCurrentSize().longValue());
+        assertEquals(30L, finalStatus.getCurrentSize());
     }
 
     @Test

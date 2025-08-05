@@ -216,7 +216,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
     }
 
     @Override
-    public void close() throws Exception {
+    public void close() throws IOException {
         if (state != State.CLOSED) {
             if (session.isOpen()) {
                 if (state != State.READY) {
