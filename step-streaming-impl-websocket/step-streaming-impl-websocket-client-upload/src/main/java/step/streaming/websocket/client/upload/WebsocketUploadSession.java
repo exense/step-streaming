@@ -11,6 +11,7 @@ import step.streaming.data.util.ThrowingConsumer;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -35,7 +36,7 @@ public class WebsocketUploadSession extends AbstractTransfer implements Streamin
      */
     public WebsocketUploadSession(StreamingResourceMetadata metadata, EndOfInputSignal endOfInputSignal) {
         this.metadata = metadata;
-        this.endOfInputSignal = endOfInputSignal;
+        this.endOfInputSignal = Objects.requireNonNull(endOfInputSignal);
         // This will perform a final update of the current status on completion.
         finalStatusFuture.whenComplete((status, throwable) -> {
             if (throwable == null) {
@@ -63,11 +64,6 @@ public class WebsocketUploadSession extends AbstractTransfer implements Streamin
     }
 
     @Override
-    public boolean hasEndOfInputSignal() {
-        return endOfInputSignal != null;
-    }
-
-    @Override
     public EndOfInputSignal getEndOfInputSignal() {
         return endOfInputSignal;
     }
@@ -81,7 +77,7 @@ public class WebsocketUploadSession extends AbstractTransfer implements Streamin
     @Override
     public void close() throws IOException {
         String closeMessage = "Upload session closed";
-        if (hasEndOfInputSignal() && !endOfInputSignal.isDone()) {
+        if (!endOfInputSignal.isDone()) {
             closeMessage = "Upload session was closed before input was signalled to be complete";
             endOfInputSignal.completeExceptionally(new CancellationException(closeMessage));
         }

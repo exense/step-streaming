@@ -3,7 +3,6 @@ package step.streaming.websocket.server;
 import jakarta.websocket.CloseReason;
 import jakarta.websocket.EndpointConfig;
 import jakarta.websocket.Session;
-import org.eclipse.jetty.websocket.core.exception.CloseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.*;

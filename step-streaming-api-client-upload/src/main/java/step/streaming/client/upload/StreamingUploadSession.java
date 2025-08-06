@@ -7,68 +7,68 @@ import step.streaming.data.EndOfInputSignal;
 import java.util.concurrent.*;
 
 /**
- * High-level interface for handling uploads.
- * This is returned by the {@link StreamingUploadProvider}.
+ * Lower-level interface for managing the lifecycle of a streaming upload.
  * <p>
- * It is generally expected that uploads use an end-of-input signal.
- * Providers might also expose methods that allow to create uploads
- * from standard Java InputStreams (in which case end-of-input would
- * be signaled by the stream itself).
+ * An instance of this interface represents a single active upload session and
+ * provides direct control over signaling completion, cancellation, and
+ * asynchronous status retrieval.
  * <p>
- * Note: If no end-of-input signal is used, the cancellation methods
- * will not be able to reliably interrupt the upload, and the signaling
- * methods will effectively be a no-op.
- *
- * @see StreamingUploadSession#getEndOfInputSignal()
+ * Implementations are created by a {@link StreamingUploadProvider}.
  */
 public interface StreamingUploadSession extends StreamingTransfer {
+
     /**
-     * Returns a future indicating the final status of the upload.
-     * This future may be completed successfully, or exceptionally.
+     * Returns a {@link CompletableFuture} that will be completed with the final
+     * {@link StreamingResourceStatus} of the upload.
+     * <p>
+     * The returned future completes:
+     * <ul>
+     *   <li>successfully, with the final status, when the upload finishes normally, or</li>
+     *   <li>exceptionally, if the upload fails or is cancelled.</li>
+     * </ul>
+     *
      * @return a future indicating the final status of the upload.
      */
     CompletableFuture<StreamingResourceStatus> getFinalStatusFuture();
 
-    default StreamingResourceStatus getFinalStatus() {
-        return getFinalStatusFuture().join();
-    }
-
     /**
-     * Indicates whether this upload uses an end-of-input signal.
-     * @return <tt>true</tt> if an end-of-input signal is present, <tt>false</tt> otherwise
-     */
-    boolean hasEndOfInputSignal();
-
-    /**
-     * Returns the end-of-input signal, if present, <tt>null</tt> otherwise.
-     * This can be used for direct control, i.e. advanced use of the methods
-     * exposed by the underlying {@link CompletableFuture}. It is generally
-     * advised to use the {@link #signalEndOfInput()}, {@link #cancel()},
-     * or {@link #cancel(Exception)} though.
-     * @return the end-of-input signal, or null.
+     * Returns the {@link EndOfInputSignal} associated with this upload.
+     * <p>
+     * This signal can be used for advanced control over the input side of the upload.
+     * It is typically completed normally to indicate that no more input data will
+     * be provided, or completed exceptionally to indicate cancellation or failure.
+     * <p>
+     * Advanced users may interact with the underlying {@link CompletableFuture} methods
+     * on the signal to control completion behavior directly.
+     *
+     * @return the end-of-input signal.
      */
     EndOfInputSignal getEndOfInputSignal();
 
+
     /**
-     * Explicitly signals that the input file is complete.
+     * Signals that all input for this upload has been provided and no more data
+     * will be sent.
+     * <p>
+     * This is done by completing the end-of-input signal normally. Once this method
+     * is invoked, the upload will proceed to completion unless it fails.
      */
     default void signalEndOfInput() {
-        if (hasEndOfInputSignal()) getEndOfInputSignal().complete(null);
+        getEndOfInputSignal().complete(null);
     }
 
-    /** Cancels the upload by signaling an exception on the end-of-input signal.
-     */
-    default void cancel() {
-        cancel(new CancellationException("Cancelled by user"));
-    }
-
-    /** Cancels the upload by signaling a user-supplied exception on the end-of-input signal.
+    /**
+     * Cancels the upload by completing the end-of-input signal exceptionally.
+     * <p>
+     * If {@code optionalCause} is non-{@code null}, it will be used as the
+     * exception that completes the signal. Otherwise, a default
+     * {@link CancellationException} with the message {@code "Cancelled by user"}
+     * will be used.
      *
-     * @param cause cancellation cause
+     * @param optionalCause the reason for cancellation, or {@code null} to use
+     *                      a default {@link CancellationException}.
      */
-    default void cancel(Exception cause) {
-        if (hasEndOfInputSignal()) {
-            getEndOfInputSignal().completeExceptionally(cause);
-        }
+    default void cancel(Exception optionalCause) {
+        getEndOfInputSignal().completeExceptionally(optionalCause != null ? optionalCause : new CancellationException("Cancelled by user"));
     }
 }

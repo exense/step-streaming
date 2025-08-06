@@ -6,46 +6,72 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
 
+
 /**
- * An upload provider acts as a factory to create {@link StreamingUploadSession} instances.
- * It is named "provider" instead of "factory" because that less technical term better conveys the intentions.
+ * A provider for creating {@link StreamingUploadSession} instances.
+ * <p>
+ * This interface acts as a factory for starting streaming uploads of files,
+ * either as raw binary data or as text data that is converted to UTF-8 during upload.
+ * It is named "provider" instead of "factory" to convey a less technical,
+ * more user-oriented concept.
  */
 public interface StreamingUploadProvider {
+
     /**
-     * Starts a streaming upload of a file. The file must exist at invocation time, but it may not be fully written
-     * yet, i.e., it may still grow. It is the duty of the caller to properly signal end-of-input, meaning that
-     * the file was finished writing.
+     * Starts a streaming upload of a binary file.
      * <p>
-     * This method should be used when uploading binary data. The file content is sent as-is and not altered.
-     * For uploading text files, it is recommended to use the {@link StreamingUploadProvider#startLiveTextFileUpload(File, StreamingResourceMetadata, Charset)}
-     * method instead, which ensures that files are normalized to UTF-8 text encoding on upload.
+     * The file must exist at the time this method is invoked, but it may still be
+     * growing (i.e., being written to) during the upload process. It is the caller's
+     * responsibility to signal the end of input via
+     * {@link StreamingUploadSession#signalEndOfInput()} once the file has been
+     * completely written.
+     * <p>
+     * This method should be used for uploading non-text data such as images, videos,
+     * archives, or any other binary content. The file content is sent as-is without
+     * any re-encoding or transformation.
+     * <p>
+     * For uploading text files, prefer
+     * {@link #startLiveTextFileUpload(File, StreamingResourceMetadata, Charset)},
+     * which ensures that text content is normalized to UTF-8 encoding during upload.
      *
-     * @param fileToStream file to upload
-     * @param metadata     file metadata, i.e., file name and type
-     * @return a {@link StreamingUploadSession} instance.
-     * @throws IOException if the file was not found or another IO error occurred.
+     * @param fileToStream the file to upload.
+     * @param metadata     the metadata describing the file, such as file name and content type.
+     * @return a {@link StreamingUploadSession} instance representing the active upload.
+     * @throws IOException if the file does not exist, cannot be read, or another I/O error occurs.
      * @see StreamingUploadSession#signalEndOfInput()
-     * @see StreamingUploadProvider#startLiveTextFileUpload(File, StreamingResourceMetadata, Charset) for uploading textual data
+     * @see #startLiveTextFileUpload(File, StreamingResourceMetadata, Charset)
      */
     StreamingUploadSession startLiveBinaryFileUpload(File fileToStream, StreamingResourceMetadata metadata) throws IOException;
 
     /**
-     * Starts a streaming upload of a text file. The file must exist at invocation time, but it may not be fully written
-     * yet, i.e., it may still grow. It is the duty of the caller to properly signal end-of-input, meaning that
-     * the file was finished writing.
+     * Starts a streaming upload of a text file.
      * <p>
-     * This method should be used for uploading text files, and it is the caller's duty to specify the correct encoding
-     * of the source file. Implementations MUST convert the file to UTF-8 encoding on the fly before performing the actual upload.
-     * All character sets are supported. For multibyte encodings like UTF-16, inlined Byte order markers (BOMs) are
-     * supported and taken into consideration when converting.
+     * The file must exist when this method is invoked, but it may still be
+     * growing (i.e., being written to) during the upload. It is the caller's
+     * responsibility to signal the end of input via
+     * {@link StreamingUploadSession#signalEndOfInput()} once the file has been
+     * fully written.
+     * <p>
+     * This method is intended for uploading text files. Callers must provide the
+     * correct {@link Charset} that reflects the file's current encoding.
+     * Implementations will convert the content to UTF-8 encoding on the fly before
+     * uploading. All character sets are supported. For multibyte encodings such
+     * as UTF-16, embedded byte order markers (BOMs) are supported and will be
+     * taken into account (and then removed) during conversion.
+     * <p>
+     * To enable the full range of server-side features — in particular, retrieving
+     * the file’s content by line number — ensure that the provided
+     * {@link StreamingResourceMetadata} is configured accordingly, e.g. by calling
+     * {@link StreamingResourceMetadata#setSupportsLineAccess(boolean)} with a
+     * value of {@code true}.
      *
-     * @param textFile file to upload
-     * @param metadata file metadata, i.e., file name and type
-     * @param charset  the Charset/encoding of the file.
-     * @return a {@link StreamingUploadSession} instance.
-     * @throws IOException if the file was not found or another IO error occurred.
+     * @param textFile the text file to upload.
+     * @param metadata the metadata describing the file, such as file name and content type.
+     * @param charset  the {@link Charset} (encoding) of the source file; must not be {@code null}.
+     * @return a {@link StreamingUploadSession} instance representing the active upload.
+     * @throws IOException if the file does not exist, cannot be read, or another I/O error occurs.
      * @see StreamingUploadSession#signalEndOfInput()
-     * @see StreamingUploadProvider#startLiveBinaryFileUpload(File, StreamingResourceMetadata) for uploading binary files.
+     * @see #startLiveBinaryFileUpload(File, StreamingResourceMetadata)
      */
     StreamingUploadSession startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws IOException;
 

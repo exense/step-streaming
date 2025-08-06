@@ -57,6 +57,7 @@ public class WebsocketUploadProvider implements StreamingUploadProvider {
 
     @Override
     public StreamingUploadSession startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws IOException {
+        metadata.setSupportsLineAccess(true);
         return startLiveFileUpload(textFile, metadata, charset);
     }
 
@@ -64,9 +65,9 @@ public class WebsocketUploadProvider implements StreamingUploadProvider {
         Objects.requireNonNull(fileToStream);
         EndOfInputSignal endOfInputSignal = new EndOfInputSignal();
         LiveFileInputStream liveInputStream = new LiveFileInputStream(fileToStream, endOfInputSignal, DEFAULT_FILE_POLL_INTERVAL_MS);
+        InputStream uploadInputStream = convertFromCharset == null ? liveInputStream : new UTF8TranscodingTextInputStream(liveInputStream, convertFromCharset);
         WebsocketUploadSession upload = new WebsocketUploadSession(Objects.requireNonNull(metadata), endOfInputSignal);
         WebsocketUploadClient client = new WebsocketUploadClient(endpointUri, upload);
-        InputStream uploadInputStream = convertFromCharset == null ? liveInputStream : new UTF8TranscodingTextInputStream(liveInputStream, convertFromCharset);
         executorService.execute(() -> client.performUpload(new ClampedReadInputStream(uploadInputStream)));
         return upload;
     }

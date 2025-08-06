@@ -5,8 +5,9 @@ import java.util.Objects;
 /**
  * Represents the current status of a streaming resource.
  * <p>
- * This includes both the transfer state (e.g., initiated, in-progress, completed, failed)
- * and the known size of the resource at the time the status was generated.
+ * This includes both the transfer state (e.g., in-progress, completed, failed),
+ * the last known size, and the number of lines (if applicable) of the resource,
+ * at the time the status was generated.
  * @see StreamingResourceTransferStatus
  */
 public class StreamingResourceStatus {
