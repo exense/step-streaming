@@ -50,6 +50,7 @@ public class WebsocketUploadSession extends AbstractTransfer implements Streamin
         });
     }
 
+    @Override
     public StreamingResourceMetadata getMetadata() {
         return metadata;
     }
@@ -114,4 +115,8 @@ public class WebsocketUploadSession extends AbstractTransfer implements Streamin
         onCloseCallbacks.add(onCloseCallback);
     }
 
+    @Override
+    public String toString() {
+        return String.format("WebsocketUploadSession{metadata=%s, currentStatus=%s}", metadata, getCurrentStatus());
+    }
 }

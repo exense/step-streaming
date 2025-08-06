@@ -117,4 +117,8 @@ public class StreamingUpload {
     public void cancel() {
         session.cancel(null);
     }
+
+    public String toString() {
+        return String.format("StreamingUpload{session=%s}", session);
+    }
 }

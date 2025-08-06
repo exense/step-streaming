@@ -1,6 +1,7 @@
 package step.streaming.client.upload;
 
 import step.streaming.client.StreamingTransfer;
+import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.data.EndOfInputSignal;
 
@@ -30,6 +31,12 @@ public interface StreamingUploadSession extends StreamingTransfer {
      * @return a future indicating the final status of the upload.
      */
     CompletableFuture<StreamingResourceStatus> getFinalStatusFuture();
+
+    /**
+     * Returns the {@link StreamingResourceMetadata} of the upload being performed.
+     * @return the upload metadata.
+     */
+    StreamingResourceMetadata getMetadata();
 
     /**
      * Returns the {@link EndOfInputSignal} associated with this upload.
