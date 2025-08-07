@@ -28,19 +28,19 @@ public class StreamingResourceMetadata {
     }
 
     /**
-     * Constructs a {@code StreamingResourceMetadata} with the given filename and MIME type.
-     * Validates the MIME type format upon construction. Line access support will automatically
-     * be determined by the MIME type given (though it may later be overridden)
+     * Constructs a {@code StreamingResourceMetadata} with the given information.
+     * Validates the MIME type format and filename upon construction.
      *
-     * @param filename the name of the file (must not be {@code null})
-     * @param mimeType the MIME type of the file (must match {@link #MIME_TYPE_PATTERN})
+     * @param filename the name of the file (must not be {@code null} or empty)
+     * @param mimeType the MIME type of the file
+     * @param supportsLineAccess flag to indicate whether access by line number is possible for this resource
      * @throws NullPointerException     if filename is {@code null}
      * @throws IllegalArgumentException if MIME type is {@code null} or invalid, or filename is empty
      */
-    public StreamingResourceMetadata(String filename, String mimeType) {
+    public StreamingResourceMetadata(String filename, String mimeType, boolean supportsLineAccess) {
         setFilename(filename);
         setMimeType(mimeType);
-        setSupportsLineAccess(mimeType.toLowerCase().startsWith("text/"));
+        setSupportsLineAccess(supportsLineAccess);
     }
 
     /**

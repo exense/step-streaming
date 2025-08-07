@@ -1,6 +1,6 @@
 package step.streaming.websocket.client.upload;
 
-import step.streaming.client.upload.StreamingUpload;
+import step.streaming.client.upload.StreamingUploadSession;
 import step.streaming.client.upload.StreamingUploadProvider;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.data.ClampedReadInputStream;
@@ -51,22 +51,23 @@ public class WebsocketUploadProvider implements StreamingUploadProvider {
     }
 
     @Override
-    public StreamingUpload startLiveBinaryFileUpload(File fileToStream, StreamingResourceMetadata metadata) throws IOException {
+    public StreamingUploadSession startLiveBinaryFileUpload(File fileToStream, StreamingResourceMetadata metadata) throws IOException {
         return startLiveFileUpload(fileToStream, metadata, null);
     }
 
     @Override
-    public StreamingUpload startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws IOException {
+    public StreamingUploadSession startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws IOException {
+        metadata.setSupportsLineAccess(true);
         return startLiveFileUpload(textFile, metadata, charset);
     }
 
-    private StreamingUpload startLiveFileUpload(File fileToStream, StreamingResourceMetadata metadata, Charset convertFromCharset) throws IOException {
+    private StreamingUploadSession startLiveFileUpload(File fileToStream, StreamingResourceMetadata metadata, Charset convertFromCharset) throws IOException {
         Objects.requireNonNull(fileToStream);
         EndOfInputSignal endOfInputSignal = new EndOfInputSignal();
         LiveFileInputStream liveInputStream = new LiveFileInputStream(fileToStream, endOfInputSignal, DEFAULT_FILE_POLL_INTERVAL_MS);
-        WebsocketUpload upload = new WebsocketUpload(Objects.requireNonNull(metadata), endOfInputSignal);
-        WebsocketUploadClient client = new WebsocketUploadClient(endpointUri, upload);
         InputStream uploadInputStream = convertFromCharset == null ? liveInputStream : new UTF8TranscodingTextInputStream(liveInputStream, convertFromCharset);
+        WebsocketUploadSession upload = new WebsocketUploadSession(Objects.requireNonNull(metadata), endOfInputSignal);
+        WebsocketUploadClient client = new WebsocketUploadClient(endpointUri, upload);
         executorService.execute(() -> client.performUpload(new ClampedReadInputStream(uploadInputStream)));
         return upload;
     }

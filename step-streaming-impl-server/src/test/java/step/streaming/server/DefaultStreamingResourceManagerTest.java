@@ -13,6 +13,7 @@ import step.streaming.common.StreamingResourceTransferStatus;
 import step.streaming.server.test.FailingInputStream;
 import step.streaming.server.test.InMemoryCatalogBackend;
 import step.streaming.server.test.TestingStorageBackend;
+import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.*;
 
 import java.io.*;
 import java.util.List;
@@ -69,7 +70,7 @@ public class DefaultStreamingResourceManagerTest {
 
     @Test
     public void testHappyPathUploadWithListeners() throws Exception {
-        final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", "text/plain"), null);
+        final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", TEXT_PLAIN, true), null);
 
         final List<StreamingResourceStatus> listener1Events = new CopyOnWriteArrayList<>();
         final List<StreamingResourceStatus> listener2Events = new CopyOnWriteArrayList<>();
@@ -116,12 +117,12 @@ public class DefaultStreamingResourceManagerTest {
 
         assertEquals(StreamingResourceTransferStatus.COMPLETED, final1.getTransferStatus());
         assertEquals(final1, final2);
-        assertEquals(100, final1.getCurrentSize().longValue());
+        assertEquals(100, final1.getCurrentSize());
     }
 
     @Test
     public void testUploadFailsWithIOException() throws Exception {
-        final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", "text/plain"), null);
+        final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", TEXT_PLAIN, true), null);
 
         final List<StreamingResourceStatus> listenerEvents = new CopyOnWriteArrayList<>();
         manager.registerStatusListener(resourceId, listenerEvents::add);
@@ -150,7 +151,7 @@ public class DefaultStreamingResourceManagerTest {
         StreamingResourceStatus finalStatus = listenerEvents.get(listenerEvents.size() - 1);
         assertEquals(StreamingResourceTransferStatus.FAILED, finalStatus.getTransferStatus());
         // we still expect failed resources to keep their last "successful" size
-        assertEquals(30L, finalStatus.getCurrentSize().longValue());
+        assertEquals(30L, finalStatus.getCurrentSize());
     }
 
     @Test
@@ -207,7 +208,7 @@ public class DefaultStreamingResourceManagerTest {
     }
 
     private String uploadAndCheckSizeAndLinebreaks(String fileName, long expectedSize, long expectedNumberOfLines) throws IOException {
-        final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", "text/plain"), null);
+        final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", TEXT_PLAIN, true), null);
         InputStream is = getClass().getClassLoader().getResourceAsStream(fileName);
         long size = manager.writeChunk(resourceId, is);
         assertEquals(expectedSize, size);

@@ -1,75 +1,124 @@
 package step.streaming.client.upload;
 
-import step.streaming.client.StreamingTransfer;
 import step.streaming.common.StreamingResourceStatus;
-import step.streaming.data.EndOfInputSignal;
 
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletableFuture;
+import java.time.Duration;
+import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
 
 /**
- * High-level interface for handling uploads.
- * This is returned by the {@link StreamingUploadProvider}.
+ * High-level object for performing streaming uploads.
  * <p>
- * It is generally expected that uploads use an end-of-input signal.
- * Providers might also expose methods that allow to create uploads
- * from standard Java InputStreams (in which case end-of-input would
- * be signaled by the stream itself).
+ * An upload MUST be completed by invoking either {@link #complete()} or
+ * {@link #complete(Duration)}, which signal that the input data is complete
+ * (no more data will be sent) and wait until the upload transfer finishes
+ * and the final {@link StreamingResourceStatus} result becomes available.
  * <p>
- * Note: If no end-of-input signal is used, the cancellation methods
- * will not be able to reliably interrupt the upload, and the signaling
- * methods will effectively be a no-op.
- *
- * @see StreamingUpload#getEndOfInputSignal()
+ * If lower-level control is required (such as manually interacting with the
+ * underlying asynchronous constructs), the underlying {@link StreamingUploadSession}
+ * can be accessed via {@link #getSession()}.
  */
-public interface StreamingUpload extends StreamingTransfer {
-    /**
-     * Returns a future indicating the final status of the upload.
-     * This future may be completed successfully, or exceptionally.
-     * @return a future indicating the final status of the upload.
-     */
-    CompletableFuture<StreamingResourceStatus> getFinalStatusFuture();
+public class StreamingUpload {
+    private final StreamingUploadSession session;
+
 
     /**
-     * Indicates whether this upload uses an end-of-input signal.
-     * @return <tt>true</tt> if an end-of-input signal is present, <tt>false</tt> otherwise
+     * Creates a new {@code StreamingUpload} instance backed by the specified session.
+     *
+     * @param session the {@link StreamingUploadSession} that performs and manages the actual upload;
+     *                must not be {@code null}.
+     * @throws NullPointerException if {@code session} is {@code null}.
      */
-    boolean hasEndOfInputSignal();
-
-    /**
-     * Returns the end-of-input signal, if present, <tt>null</tt> otherwise.
-     * This can be used for direct control, i.e. advanced use of the methods
-     * exposed by the underlying {@link CompletableFuture}. It is generally
-     * advised to use the {@link #signalEndOfInput()}, {@link #cancel()},
-     * or {@link #cancel(Exception)} though.
-     * @return the end-of-input signal, or null.
-     */
-    EndOfInputSignal getEndOfInputSignal();
-
-    /**
-     * Convenience method to signal end of input, and retrieve the final status future at the same time.
-     * @return the final status future
-     */
-    default CompletableFuture<StreamingResourceStatus> signalEndOfInput() {
-        if (hasEndOfInputSignal()) getEndOfInputSignal().complete(null);
-        return getFinalStatusFuture();
+    public StreamingUpload(StreamingUploadSession session) {
+        this.session = Objects.requireNonNull(session);
     }
 
-    /** Cancels the upload by signaling an exception on the end-of-input signal.
+    /**
+     * Returns the underlying {@link StreamingUploadSession} for advanced usage.
+     * <p>
+     * This allows direct interaction with the upload session for lower-level
+     * control, such as directly managing end-of-input signaling, cancellation,
+     * or interacting with asynchronous completion futures.
      *
-     * @return the final status future
+     * @return the underlying {@link StreamingUploadSession}.
      */
-    default CompletableFuture<StreamingResourceStatus> cancel() {
-        return cancel(new CancellationException("Cancelled by user"));
+    public StreamingUploadSession getSession() {
+        return session;
     }
 
-    /** Cancels the upload by signaling a user-supplied exception on the end-of-input signal.
+    /**
+     * Signals that the upload input is complete and waits for the final upload transfer status,
+     * up to the specified timeout.
+     * <p>
+     * This method first calls {@link StreamingUploadSession#signalEndOfInput()} to indicate that
+     * the input is complete and no more data will be provided, and then blocks until either:
+     * <ul>
+     *   <li>the final {@link StreamingResourceStatus} becomes available, indicating upload completion, or</li>
+     *   <li>the given timeout expires.</li>
+     * </ul>
      *
-     * @param cause cancellation cause
-     * @return the final status future
+     * @param timeout the maximum time to wait for the final status; must not be {@code null}.
+     * @return the final {@link StreamingResourceStatus} of the upload.
+     * @throws NullPointerException if {@code timeout} is {@code null}.
+     * @throws InterruptedException if the current thread is interrupted while waiting.
+     * @throws ExecutionException if the upload completed exceptionally; the cause can be
+     *                             retrieved from {@link ExecutionException#getCause()}.
+     * @throws TimeoutException if the given timeout elapses before the final status is available.
      */
-    default CompletableFuture<StreamingResourceStatus> cancel(Exception cause) {
-        if (hasEndOfInputSignal()) getEndOfInputSignal().completeExceptionally(cause);
-        return getFinalStatusFuture();
+    public StreamingResourceStatus complete(Duration timeout) throws ExecutionException, InterruptedException, TimeoutException {
+        Objects.requireNonNull(timeout);
+        session.signalEndOfInput();
+        return session.getFinalStatusFuture().get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    }
+
+
+    /**
+     * Signals that the upload input is complete and waits indefinitely for the final upload transfer status.
+     * <p>
+     * This method first calls {@link StreamingUploadSession#signalEndOfInput()} to indicate that
+     * the input is complete and no more data will be provided, and then blocks until the final
+     * {@link StreamingResourceStatus} becomes available, indicating upload completion.
+     *
+     * @return the final {@link StreamingResourceStatus} of the upload.
+     * @throws InterruptedException if the current thread is interrupted while waiting.
+     * @throws ExecutionException if the upload completed exceptionally; the cause can be
+     *                             retrieved from {@link ExecutionException#getCause()}.
+     *
+     * @see #complete(Duration)
+     */
+    public StreamingResourceStatus complete() throws ExecutionException, InterruptedException {
+        session.signalEndOfInput();
+        return session.getFinalStatusFuture().get();
+    }
+
+    /**
+     * Cancels the upload, providing a specific cause for the cancellation.
+     * <p>
+     * This will signal an exceptional completion to the underlying upload session
+     * via {@link StreamingUploadSession#cancel(Exception)}.
+     *
+     * @param cause the exception that describes the reason for cancellation; must not be null
+     */
+    public void cancel(Exception cause) {
+        session.cancel(Objects.requireNonNull(cause));
+    }
+
+    /**
+     * Cancels the upload without providing any specific reason.
+     * <p>
+     * The implementation will internally use a
+     * {@link java.util.concurrent.CancellationException} with the message
+     * {@code "Cancelled by user"}.
+     * @see #cancel(Exception)
+     */
+    public void cancel() {
+        session.cancel(null);
+    }
+
+    public String toString() {
+        return String.format("StreamingUpload{session=%s}", session);
     }
 }

@@ -14,7 +14,6 @@ import step.streaming.websocket.protocol.upload.*;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.nio.channels.ClosedChannelException;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -27,37 +26,37 @@ public class WebsocketUploadClient {
     private enum State {
         EXPECTING_REFERENCE,
         UPLOADING,
-        EXPECTING_FINALIZATION,
+        EXPECTING_ACKNOWLEDGE,
         FINALIZED,
         CLOSED
     }
 
     private final WebsocketUploadClient self = this;
-    private final Session session;
+    private final Session jettySession;
     private final long reportIntervalMs;
-    private final WebsocketUpload upload;
+    private final WebsocketUploadSession uploadSession;
     // this will be populated in response to the upload message
     private final CompletableFuture<StreamingResourceReference> referenceFuture = new CompletableFuture<>();
     // populated in response to finalize message
-    private final CompletableFuture<UploadFinishedMessage> uploadFinishedFuture = new CompletableFuture<>();
+    private final CompletableFuture<UploadAcknowledgedMessage> uploadAcknowledgedFuture = new CompletableFuture<>();
     private State state;
     private Remote endpoint;
 
     @Override
     public String toString() {
-        return String.format("{session=%s}", session.getId());
+        return String.format("{session=%s}", jettySession.getId());
     }
 
-    public WebsocketUploadClient(URI endpointUri, WebsocketUpload upload) throws IOException {
-        this(endpointUri, upload, ContainerProvider.getWebSocketContainer(), DEFAULT_REPORT_INTERVAL_MS);
+    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession) throws IOException {
+        this(endpointUri, uploadSession, ContainerProvider.getWebSocketContainer(), DEFAULT_REPORT_INTERVAL_MS);
     }
 
-    public WebsocketUploadClient(URI endpointUri, WebsocketUpload upload, WebSocketContainer container, long reportIntervalMs) throws IOException {
+    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession, WebSocketContainer container, long reportIntervalMs) throws IOException {
         UploadProtocolMessage.initialize();
-        this.upload = Objects.requireNonNull(upload);
-        upload.onClose(this::onUploadClosed);
+        this.uploadSession = Objects.requireNonNull(uploadSession);
+        uploadSession.onClose(this::onUploadSessionClosed);
         this.reportIntervalMs = reportIntervalMs;
-        session = connect(endpointUri, container);
+        jettySession = connect(endpointUri, container);
         logger.debug("{} Connected to endpoint {}", this, endpointUri);
         // immediately send the upload inititation message; this might (theoretically) throw an exception
         sendUploadRequestAndAwaitReply();
@@ -76,22 +75,22 @@ public class WebsocketUploadClient {
         logger.debug("onMessage: {}", message);
         if (state == State.EXPECTING_REFERENCE && message instanceof ReadyForUploadMessage) {
             referenceFuture.complete(((ReadyForUploadMessage) message).reference);
-        } else if (state == State.EXPECTING_FINALIZATION && message instanceof UploadFinishedMessage) {
-            uploadFinishedFuture.complete((UploadFinishedMessage) message);
+        } else if (state == State.EXPECTING_ACKNOWLEDGE && message instanceof UploadAcknowledgedMessage) {
+            uploadAcknowledgedFuture.complete((UploadAcknowledgedMessage) message);
         } else {
             throw new IllegalArgumentException("Unexpected message type: " + message.getClass().getSimpleName() + " in state " + state);
         }
     }
 
     private void sendUploadRequestAndAwaitReply() throws IOException {
-        RequestUploadStartMessage request = new RequestUploadStartMessage(upload.getMetadata());
+        StartUploadMessage request = new StartUploadMessage(uploadSession.getMetadata());
         state = State.EXPECTING_REFERENCE;
-        session.getBasicRemote().sendText(request.toString());
+        jettySession.getBasicRemote().sendText(request.toString());
         try {
             // response is usually immediate, but allow for a little more time (though not unlimited)
             StreamingResourceReference reference = referenceFuture.get(60, TimeUnit.SECONDS);
-            upload.setUploadReference(reference);
-            upload.setCurrentUploadStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L, null));
+            uploadSession.setUploadReference(reference);
+            uploadSession.setCurrentUploadStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L, null));
             state = State.UPLOADING;
         } catch (Exception e) {
             throw new IOException(e);
@@ -108,12 +107,12 @@ public class WebsocketUploadClient {
         }
     }
 
-    private void closeSessionAbnormally(String message, Exception optionalExceptionContext) {
+    private void closeSessionAbnormally(String message, Exception optionalOuterExceptionContext) {
         try {
-            session.close(new CloseReason(CloseReason.CloseCodes.UNEXPECTED_CONDITION, message));
+            endpoint.closeSession(jettySession, new CloseReason(CloseReason.CloseCodes.UNEXPECTED_CONDITION, message));
         } catch (Exception inner) {
-            if (optionalExceptionContext != null) {
-                optionalExceptionContext.addSuppressed(inner);
+            if (optionalOuterExceptionContext != null) {
+                optionalOuterExceptionContext.addSuppressed(inner);
             }
         }
     }
@@ -125,46 +124,50 @@ public class WebsocketUploadClient {
             if (state != State.UPLOADING) {
                 throw new IllegalStateException("Requested data upload, but state is " + state);
             }
-            outputStream = new MD5CalculatingOutputStream(new CheckpointingOutputStream(session.getBasicRemote().getSendStream(), reportIntervalMs, this::updateInProgressTransferSize));
+            outputStream = new MD5CalculatingOutputStream(new CheckpointingOutputStream(jettySession.getBasicRemote().getSendStream(), reportIntervalMs, this::updateInProgressTransferSize));
             long bytesSent = inputStream.transferTo(outputStream);
             // We explicitly close the input and output to also catch any potential exceptions there. This is why we don't use try-with-resources.
             inputStream.close();
             outputStream.close();
-            logger.debug("{} Data sent: {} bytes", this, bytesSent);
-            state = State.EXPECTING_FINALIZATION;
-            UploadFinishedMessage finished = uploadFinishedFuture.get(60, TimeUnit.SECONDS);
             String clientChecksum = outputStream.getChecksum();
-            String serverChecksum = finished.checksum;
+            logger.debug("{} Data sent: {} bytes, checksum={}", this, bytesSent, clientChecksum);
+            jettySession.getBasicRemote().sendText(new FinishUploadMessage(clientChecksum).toString());
+            state = State.EXPECTING_ACKNOWLEDGE;
+            UploadAcknowledgedMessage acknowledgedMessage = uploadAcknowledgedFuture.get(60, TimeUnit.SECONDS);
+            String serverChecksum = acknowledgedMessage.checksum;
             if (!clientChecksum.equals(serverChecksum)) {
+                // This is actually redundant and should never be reached - in the current implementation, the server
+                // detects any mismatch and closes the session abnormally instead of sending the ACK message
                 throw new IOException("checksum mismatch: client reported " + clientChecksum + ", but server reported " + serverChecksum);
             }
             state = State.FINALIZED;
             closeSessionNormally();
 
-            // wait until the upload is closed too
-            upload.getFinalStatusFuture().get(60, TimeUnit.SECONDS);
+            // wait until the uploadSession final status is also set (should be a side effect of closing the session)
+            uploadSession.getFinalStatusFuture().get(60, TimeUnit.SECONDS);
         } catch (Exception exception) {
             closeCloseableOnException(inputStream, exception);
             closeCloseableOnException(outputStream, exception);
+            logger.error("Upload failed:", exception);
             closeSessionAbnormally(exception.getMessage(), exception);
         }
     }
 
     private void updateInProgressTransferSize(long transferredBytes) {
-        if (!upload.getFinalStatusFuture().isDone()) {
-            upload.setCurrentUploadStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.IN_PROGRESS, transferredBytes, null));
+        if (!uploadSession.getFinalStatusFuture().isDone()) {
+            uploadSession.setCurrentUploadStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.IN_PROGRESS, transferredBytes, null));
         }
     }
 
     private void closeSessionNormally() throws IOException {
         CloseReason closeReason = new CloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, UploadProtocolMessage.CLOSEREASON_PHRASE_UPLOAD_COMPLETED);
-        logger.debug("About to close session {} with reason: {}", session.getId(), closeReason);
-        endpoint.closeSession(session, closeReason);
+        logger.debug("About to close session {} with reason: {}", jettySession.getId(), closeReason);
+        endpoint.closeSession(jettySession, closeReason);
     }
 
     private void onError(Throwable throwable) {
         logger.error("{} Unexpected error", this, throwable);
-        upload.getFinalStatusFuture().completeExceptionally(throwable);
+        uploadSession.getFinalStatusFuture().completeExceptionally(throwable);
     }
 
     private void onClose(CloseReason closeReason) {
@@ -172,8 +175,8 @@ public class WebsocketUploadClient {
             // normal closure
             logger.info("{} Session closing, reason={}", this, closeReason);
             // uploadFinishedFuture is guaranteed to have completed before FINALIZED state is set
-            UploadFinishedMessage finishedMessage = uploadFinishedFuture.join();
-            upload.getFinalStatusFuture().complete(new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, finishedMessage.size, finishedMessage.numberOflines));
+            UploadAcknowledgedMessage finishedMessage = uploadAcknowledgedFuture.join();
+            uploadSession.getFinalStatusFuture().complete(new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, finishedMessage.size, finishedMessage.numberOflines));
         } else {
             logger.warn("{} Unexpected closure of session, reason={}, currently in state {}", this, closeReason, state);
             // terminate open futures if any
@@ -181,20 +184,21 @@ public class WebsocketUploadClient {
             if (!referenceFuture.isDone()) {
                 referenceFuture.completeExceptionally(exception);
             }
-            if (!uploadFinishedFuture.isDone()) {
-                uploadFinishedFuture.completeExceptionally(exception);
+            if (!uploadAcknowledgedFuture.isDone()) {
+                uploadAcknowledgedFuture.completeExceptionally(exception);
             }
-            if (!upload.getFinalStatusFuture().isDone()) {
-                upload.getFinalStatusFuture().completeExceptionally(exception);
+            if (!uploadSession.getFinalStatusFuture().isDone()) {
+                uploadSession.getFinalStatusFuture().completeExceptionally(exception);
             }
         }
         state = State.CLOSED;
     }
 
-    private void onUploadClosed() {
+    private void onUploadSessionClosed(String message) {
+        // if client was already closed by framework, do nothing; otherwise close client session abnormally
         if (state != State.CLOSED) {
-            logger.warn("{} Upload was closed, but client is still in state {}; Closing session abnormally", this, state);
-            closeSessionAbnormally("Upload was unexpectedly closed", null);
+            logger.warn("{} Upload session was closed, but client is still in state {}; Closing session abnormally", this, state);
+            closeSessionAbnormally(message != null ? message : "Upload session was unexpectedly closed", null);
         }
     }
 

@@ -80,7 +80,7 @@ public class WebsocketDownload extends AbstractTransfer implements StreamingDown
     }
 
     @Override
-    public void close() throws Exception {
+    public void close() throws IOException {
         client.close();
     }
 
