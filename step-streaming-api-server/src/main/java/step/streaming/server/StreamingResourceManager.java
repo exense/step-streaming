@@ -16,6 +16,8 @@ public interface StreamingResourceManager {
 
     String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) throws IOException;
 
+    void deleteResource(String resourceId) throws IOException;
+
     long writeChunk(String resourceId, InputStream input) throws IOException;
 
     void markCompleted(String resourceId);

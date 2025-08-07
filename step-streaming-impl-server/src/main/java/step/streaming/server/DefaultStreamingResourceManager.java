@@ -266,4 +266,11 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
             }
         });
     }
+
+    @Override
+    public void deleteResource(String resourceId) throws IOException {
+        catalog.delete(resourceId);
+        storage.delete(resourceId);
+    }
+
 }

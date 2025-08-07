@@ -207,6 +207,22 @@ public class DefaultStreamingResourceManagerTest {
         assertEquals(List.of("\n"), manager.getLines(id, 0, 1).collect(Collectors.toList()));
     }
 
+    @Test
+    public void testDeletion() throws Exception {
+        // we just use an existing method to generate an upload
+        assertEquals(0, catalogBackend.catalog.size());
+        String id = uploadAndCheckSizeAndLinebreaks("linebreakOnly.txt", 1, 1);
+        assertEquals(1, catalogBackend.catalog.size());
+        assertEquals(1, storageBackend.getCurrentSize(id));
+        assertNotNull(storageBackend.getLinebreakIndex(id));
+
+        manager.deleteResource(id);
+        assertEquals(0, catalogBackend.catalog.size());
+        assertNull(storageBackend.getLinebreakIndex(id));
+        // non-existing resources return 0 by design in storage (but file is actually deleted)
+        assertEquals(0, storageBackend.getCurrentSize(id));
+    }
+
     private String uploadAndCheckSizeAndLinebreaks(String fileName, long expectedSize, long expectedNumberOfLines) throws IOException {
         final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", TEXT_PLAIN, true), null);
         InputStream is = getClass().getClassLoader().getResourceAsStream(fileName);

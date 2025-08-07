@@ -38,6 +38,7 @@ public class LinebreakIndexFile implements AutoCloseable, LinebreakIndex {
     private static final long MAX_ENTRY_VALUE = 0xFFFFFFFFFFL; // 40-bit max
 
 
+    // This will always return a file (never null), but that file potentially does not exist.
     public static File getIndexFile(File dataFile) {
         return new File(dataFile.getParentFile(), dataFile.getName() + FILE_EXTENSION);
     }
