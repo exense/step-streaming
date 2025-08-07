@@ -1,21 +1,22 @@
 package step.streaming.websocket.client.upload;
 
 import step.streaming.client.AbstractTransfer;
-import step.streaming.data.EndOfInputSignal;
 import step.streaming.client.upload.StreamingUploadSession;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceReference;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
+import step.streaming.data.EndOfInputSignal;
 import step.streaming.data.util.ThrowingConsumer;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Represents a streaming upload using a WebSocket transport.
@@ -75,6 +76,16 @@ public class WebsocketUploadSession extends AbstractTransfer implements Streamin
     }
 
 
+    private IOException setOrAddSuppressed(IOException existing, Exception current) {
+        if (existing == null) {
+            // in theory, all incoming exceptions should already be IOExceptions, but wrap others just in case
+            return current instanceof IOException ? (IOException) current : new IOException(current);
+        } else {
+            existing.addSuppressed(current);
+            return existing;
+        }
+    }
+
     @Override
     public void close() throws IOException {
         String closeMessage = "Upload session closed";
@@ -82,20 +93,12 @@ public class WebsocketUploadSession extends AbstractTransfer implements Streamin
             closeMessage = "Upload session was closed before input was signalled to be complete";
             endOfInputSignal.completeExceptionally(new CancellationException(closeMessage));
         }
-        AtomicReference<IOException> resultException = new AtomicReference<>(null);
-        Consumer<Exception> onException = e -> {
-            if (resultException.get() == null) {
-                IOException io = e instanceof IOException ? (IOException) e : new IOException(e);
-                resultException.set(io);
-            } else {
-                resultException.get().addSuppressed(e);
-            }
-        };
+        IOException exception = null;
         for (ThrowingConsumer<String> onCloseCallback : onCloseCallbacks) {
             try {
                 onCloseCallback.accept(closeMessage);
             } catch (Exception e) {
-                onException.accept(e);
+                exception = setOrAddSuppressed(exception, e);
             }
         }
         // Wait for the final status to be set. If not set before,
@@ -104,10 +107,10 @@ public class WebsocketUploadSession extends AbstractTransfer implements Streamin
         try {
             finalStatusFuture.get(60, TimeUnit.SECONDS);
         } catch (Exception e) {
-            onException.accept(e);
+            exception = setOrAddSuppressed(exception, e);
         }
-        if (resultException.get() != null) {
-            throw resultException.get();
+        if (exception != null) {
+            throw exception;
         }
     }
 

@@ -61,4 +61,9 @@ public class InMemoryCatalogBackend implements StreamingResourcesCatalogBackend 
         CatalogEntry entry = catalog.get(resourceId);
         return entry != null ? entry.name : null;
     }
+
+    @Override
+    public void delete(String resourceId) {
+        catalog.remove(resourceId);
+    }
 }

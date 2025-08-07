@@ -216,4 +216,9 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
             throw new RuntimeException("MD5 not available", e);
         }
     }
+
+    @Override
+    public void delete(String resourceId) throws IOException {
+        File baseFile = resolveFileForId(resourceId, false);
+    }
 }

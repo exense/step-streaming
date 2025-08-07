@@ -38,7 +38,7 @@ public class LinebreakIndexFile implements AutoCloseable, LinebreakIndex {
     private static final long MAX_ENTRY_VALUE = 0xFFFFFFFFFFL; // 40-bit max
 
 
-    private static File getIndexFile(File dataFile) {
+    public static File getIndexFile(File dataFile) {
         return new File(dataFile.getParentFile(), dataFile.getName() + FILE_EXTENSION);
     }
 
@@ -61,7 +61,6 @@ public class LinebreakIndexFile implements AutoCloseable, LinebreakIndex {
         }
         return new LinebreakIndexFile(baseFile, 0, Mode.READ);
     }
-
 
     public static LinebreakIndexFile openIfExistsForWrite(File dataFile, long baseOffset) throws IOException {
         File baseFile = getIndexFile(dataFile);

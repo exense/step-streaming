@@ -33,4 +33,10 @@ public interface StreamingResourcesCatalogBackend {
      * @return the status metadata
      */
     StreamingResourceStatus getStatus(String resourceId);
+
+    /**
+     * Deletes a resource.
+     * @param resourceId internal resource identifier
+     */
+    void delete(String resourceId);
 }
