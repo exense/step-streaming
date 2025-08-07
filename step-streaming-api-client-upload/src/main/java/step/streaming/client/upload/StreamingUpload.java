@@ -13,8 +13,8 @@ import java.util.concurrent.TimeoutException;
  * High-level object for performing streaming uploads.
  * <p>
  * An upload MUST be completed by invoking either {@link #complete()} or
- * {@link #complete(Duration)}, which signal that the input data is complete
- * (no more data will be sent) and wait until the upload transfer finishes
+ * {@link #complete(Duration)}, which signals that the input data is complete
+ * (no more data will be sent), then waits until the upload transfer finishes
  * and the final {@link StreamingResourceStatus} result becomes available.
  * <p>
  * If lower-level control is required (such as manually interacting with the
