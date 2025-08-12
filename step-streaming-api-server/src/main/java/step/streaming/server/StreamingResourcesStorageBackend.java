@@ -70,4 +70,6 @@ public interface StreamingResourcesStorageBackend {
     void handleFailedUpload(String resourceId);
 
     LinebreakIndex getLinebreakIndex(String resourceId) throws IOException;
+
+    void delete(String resourceId) throws IOException;
 }

@@ -216,4 +216,22 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
             throw new RuntimeException("MD5 not available", e);
         }
     }
+
+    @Override
+    public void delete(String resourceId) throws IOException {
+        File baseFile = resolveFileForId(resourceId, false);
+        if (baseFile.exists() && baseFile.isFile()) {
+            boolean deleted = baseFile.delete();
+            if (!deleted) {
+                throw new IOException("Unable to delete file: " + baseFile);
+            }
+        }
+        File indexFile = LinebreakIndexFile.getIndexFile(baseFile);
+        if (indexFile.exists() && indexFile.isFile()) {
+            boolean deleted = indexFile.delete();
+            if (!deleted) {
+                throw new IOException("Unable to delete file: " + indexFile);
+            }
+        }
+    }
 }

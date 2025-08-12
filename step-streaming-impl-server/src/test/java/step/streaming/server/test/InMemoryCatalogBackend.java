@@ -15,9 +15,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class InMemoryCatalogBackend implements StreamingResourcesCatalogBackend {
 
-    private static class CatalogEntry {
-        final String name;
-        final String type;
+    public static class CatalogEntry {
+        public final String name;
+        public final String type;
         StreamingResourceStatus status;
 
         CatalogEntry(String name, String type, StreamingResourceStatus status) {
@@ -27,7 +27,7 @@ public class InMemoryCatalogBackend implements StreamingResourcesCatalogBackend 
         }
     }
 
-    private final Map<String, CatalogEntry> catalog = new ConcurrentHashMap<>();
+    public final Map<String, CatalogEntry> catalog = new ConcurrentHashMap<>();
 
     @Override
     public String createResource(StreamingResourceMetadata metadata, StreamingResourceUploadContext uploadContext) {
@@ -60,5 +60,10 @@ public class InMemoryCatalogBackend implements StreamingResourcesCatalogBackend 
     public String getName(String resourceId) {
         CatalogEntry entry = catalog.get(resourceId);
         return entry != null ? entry.name : null;
+    }
+
+    @Override
+    public void delete(String resourceId) {
+        catalog.remove(resourceId);
     }
 }
