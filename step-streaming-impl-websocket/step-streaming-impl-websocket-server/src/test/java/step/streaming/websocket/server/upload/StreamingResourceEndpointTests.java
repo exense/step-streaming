@@ -13,10 +13,7 @@ import step.streaming.client.upload.StreamingUploadSession;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
-import step.streaming.data.CheckpointingOutputStream;
-import step.streaming.data.ClampedReadInputStream;
-import step.streaming.data.MD5CalculatingInputStream;
-import step.streaming.data.MD5CalculatingOutputStream;
+import step.streaming.data.*;
 import step.streaming.server.DefaultStreamingResourceManager;
 import step.streaming.server.URITemplateBasedReferenceProducer;
 import step.streaming.server.test.InMemoryCatalogBackend;
@@ -105,7 +102,7 @@ public class StreamingResourceEndpointTests {
         URI uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
 
         StreamingResourceMetadata metadata = new StreamingResourceMetadata("test.txt", TEXT_PLAIN, true);
-        WebsocketUploadSession upload = new WebsocketUploadSession(metadata, null);
+        WebsocketUploadSession upload = new WebsocketUploadSession(metadata, new EndOfInputSignal());
         // TODO: timeout
         //WebsocketUploadClient uploadClient = new WebsocketUploadClient(uploadUri, upload, ContainerProvider.getWebSocketContainer(), 200, 10);
         WebsocketUploadClient uploadClient = new WebsocketUploadClient(uploadUri, upload);
@@ -163,7 +160,7 @@ public class StreamingResourceEndpointTests {
         public FileBytesProducer(File sourceFile, long duration, TimeUnit durationUnit) throws Exception {
             file = File.createTempFile("streaming-upload-test", ".tmp");
             file.deleteOnExit();
-            input = new ClampedReadInputStream(new TricklingDelegatingInputStream(new FileInputStream(sourceFile), sourceFile.length(), duration, durationUnit));
+            input = new LimitedBufferInputStream(new TricklingDelegatingInputStream(new FileInputStream(sourceFile), sourceFile.length(), duration, durationUnit), 64);
             output = new MD5CalculatingOutputStream(new FileOutputStream(file));
         }
 

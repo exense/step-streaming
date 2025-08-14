@@ -1,7 +1,5 @@
 package step.streaming.client;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import step.streaming.common.StreamingResourceReference;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
@@ -25,17 +23,19 @@ import java.util.function.Consumer;
  * The associated {@link StreamingResourceReference} must be set via {@link #setReference(StreamingResourceReference)}
  * before use.
  * </p>
+ * Error handling is delegated using callbacks which can be overridden in subclasses, mostly meant for
+ * logging purposes (i.e., implementations can simply log the respective event), since we did not want to
+ * introduce a dependency on a particular logging framework at this level.
  */
-public abstract class AbstractTransfer implements StreamingTransfer {
-    private static final Logger logger = LoggerFactory.getLogger(AbstractTransfer.class);
+public abstract class AbstractStreamingTransfer implements StreamingTransfer {
     private StreamingResourceStatus currentStatus;
     private StreamingResourceReference reference;
     private final Map<Consumer<StreamingResourceStatus>, List<StreamingResourceTransferStatus>> statusListeners = new ConcurrentHashMap<>();
 
-    protected AbstractTransfer() {
+    protected AbstractStreamingTransfer() {
     }
 
-    protected void setReference(StreamingResourceReference reference) {
+    public void setReference(StreamingResourceReference reference) {
         this.reference = Objects.requireNonNull(reference);
     }
 
@@ -55,17 +55,27 @@ public abstract class AbstractTransfer implements StreamingTransfer {
      *
      * @param status the new transfer status; must not be {@code null}
      */
-    protected void setCurrentStatus(StreamingResourceStatus status) {
+    public void setCurrentStatus(StreamingResourceStatus status) {
         currentStatus = Objects.requireNonNull(status);
         for (Map.Entry<Consumer<StreamingResourceStatus>, List<StreamingResourceTransferStatus>> callback : statusListeners.entrySet()) {
             if (callback.getValue().isEmpty() || callback.getValue().contains(status.getTransferStatus())) {
                 try {
                     callback.getKey().accept(status);
                 } catch (Exception e) {
-                    logger.error("Status callback failed", e);
+                    onStatusCallbackFailed(callback.getKey(), e);
                 }
             }
         }
+    }
+
+    /** Invoked when a status callback failed.
+     * The default implementation does nothing; override in subclasses e.g. for logging purposes.
+     *
+     * @param callback the failed callback
+     * @param exception the exception that was thrown
+     */
+    protected void onStatusCallbackFailed(Consumer<StreamingResourceStatus> callback, Exception exception) {
+
     }
 
     @Override

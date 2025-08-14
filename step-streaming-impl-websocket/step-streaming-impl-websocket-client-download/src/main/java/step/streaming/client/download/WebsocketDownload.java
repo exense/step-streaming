@@ -2,7 +2,7 @@ package step.streaming.client.download;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import step.streaming.client.AbstractTransfer;
+import step.streaming.client.AbstractStreamingTransfer;
 import step.streaming.common.StreamingResourceReference;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
@@ -14,6 +14,7 @@ import java.io.InputStream;
 import java.io.PipedOutputStream;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
  * A {@link StreamingDownload} implementation that handles downloading a resource over WebSocket.
@@ -28,7 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * updates and blocking read requests.
  * </p>
  */
-public class WebsocketDownload extends AbstractTransfer implements StreamingDownload {
+public class WebsocketDownload extends AbstractStreamingTransfer implements StreamingDownload {
     private static final Logger logger = LoggerFactory.getLogger(WebsocketDownload.class);
     private final WebsocketDownloadClient client;
     private final AtomicReference<TrackablePipedInputStream> activeChunkStream = new AtomicReference<>();
@@ -49,7 +50,7 @@ public class WebsocketDownload extends AbstractTransfer implements StreamingDown
     }
 
     @Override
-    protected void setCurrentStatus(StreamingResourceStatus status) {
+    public void setCurrentStatus(StreamingResourceStatus status) {
         logger.debug("Setting current status to {}", status);
         // this will notify potential downstream listeners
         super.setCurrentStatus(status);
@@ -255,5 +256,10 @@ public class WebsocketDownload extends AbstractTransfer implements StreamingDown
             }
             return read;
         }
+    }
+
+    @Override
+    protected void onStatusCallbackFailed(Consumer<StreamingResourceStatus> callback, Exception exception) {
+        logger.error("Error while invoking status callback {}", callback, exception);
     }
 }

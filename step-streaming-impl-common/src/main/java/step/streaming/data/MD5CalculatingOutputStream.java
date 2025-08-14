@@ -1,6 +1,6 @@
 package step.streaming.data;
 
-import step.streaming.data.util.DigestHelper;
+import step.streaming.util.DigestHelper;
 
 import java.io.FilterOutputStream;
 import java.io.IOException;

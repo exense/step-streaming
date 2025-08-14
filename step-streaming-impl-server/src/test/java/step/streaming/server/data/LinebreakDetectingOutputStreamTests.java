@@ -1,7 +1,8 @@
 package step.streaming.server.data;
 
 import org.junit.Test;
-import step.streaming.data.util.ThrowingConsumer;
+import step.streaming.data.LinebreakDetectingOutputStream;
+import step.streaming.util.ThrowingConsumer;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;

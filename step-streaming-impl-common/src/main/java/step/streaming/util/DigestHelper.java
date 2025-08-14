@@ -1,4 +1,4 @@
-package step.streaming.data.util;
+package step.streaming.util;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;

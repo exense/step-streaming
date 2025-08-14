@@ -1,6 +1,6 @@
-package step.streaming.server.data;
+package step.streaming.data;
 
-import step.streaming.data.util.ThrowingConsumer;
+import step.streaming.util.ThrowingConsumer;
 
 import java.io.IOException;
 import java.io.OutputStream;

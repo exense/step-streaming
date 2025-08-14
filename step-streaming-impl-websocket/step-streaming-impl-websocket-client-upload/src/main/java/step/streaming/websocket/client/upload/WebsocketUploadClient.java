@@ -19,7 +19,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 public class WebsocketUploadClient {
-    public static final long DEFAULT_REPORT_INTERVAL_MS = 1000;
+    public static final long DEFAULT_LOCAL_STATUS_UPDATE_INTERVAL_MS = 1000;
 
     private static final Logger logger = LoggerFactory.getLogger(WebsocketUploadClient.class);
 
@@ -33,7 +33,8 @@ public class WebsocketUploadClient {
 
     private final WebsocketUploadClient self = this;
     private final Session jettySession;
-    private final long reportIntervalMs;
+    // how often does the local status (i.e. number of bytes transferred) get updated?
+    private final long localStatusUpdateIntervalMs;
     private final WebsocketUploadSession uploadSession;
     // this will be populated in response to the upload message
     private final CompletableFuture<StreamingResourceReference> referenceFuture = new CompletableFuture<>();
@@ -41,6 +42,8 @@ public class WebsocketUploadClient {
     private final CompletableFuture<UploadAcknowledgedMessage> uploadAcknowledgedFuture = new CompletableFuture<>();
     private State state;
     private Remote endpoint;
+    // this is just a (very generous) timeout limit for awaiting responses/events; might be configurable in the future
+    private final long timeoutSeconds = 60;
 
     @Override
     public String toString() {
@@ -48,14 +51,14 @@ public class WebsocketUploadClient {
     }
 
     public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession) throws IOException {
-        this(endpointUri, uploadSession, ContainerProvider.getWebSocketContainer(), DEFAULT_REPORT_INTERVAL_MS);
+        this(endpointUri, uploadSession, ContainerProvider.getWebSocketContainer(), DEFAULT_LOCAL_STATUS_UPDATE_INTERVAL_MS);
     }
 
-    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession, WebSocketContainer container, long reportIntervalMs) throws IOException {
+    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession, WebSocketContainer container, long localStatusUpdateIntervalMs) throws IOException {
         UploadProtocolMessage.initialize();
         this.uploadSession = Objects.requireNonNull(uploadSession);
         uploadSession.onClose(this::onUploadSessionClosed);
-        this.reportIntervalMs = reportIntervalMs;
+        this.localStatusUpdateIntervalMs = localStatusUpdateIntervalMs;
         jettySession = connect(endpointUri, container);
         logger.debug("{} Connected to endpoint {}", this, endpointUri);
         // immediately send the upload inititation message; this might (theoretically) throw an exception
@@ -88,9 +91,9 @@ public class WebsocketUploadClient {
         jettySession.getBasicRemote().sendText(request.toString());
         try {
             // response is usually immediate, but allow for a little more time (though not unlimited)
-            StreamingResourceReference reference = referenceFuture.get(60, TimeUnit.SECONDS);
-            uploadSession.setUploadReference(reference);
-            uploadSession.setCurrentUploadStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L, null));
+            StreamingResourceReference reference = referenceFuture.get(timeoutSeconds, TimeUnit.SECONDS);
+            uploadSession.setReference(reference);
+            uploadSession.setCurrentStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L, null));
             state = State.UPLOADING;
         } catch (Exception e) {
             throw new IOException(e);
@@ -124,7 +127,7 @@ public class WebsocketUploadClient {
             if (state != State.UPLOADING) {
                 throw new IllegalStateException("Requested data upload, but state is " + state);
             }
-            outputStream = new MD5CalculatingOutputStream(new CheckpointingOutputStream(jettySession.getBasicRemote().getSendStream(), reportIntervalMs, this::updateInProgressTransferSize));
+            outputStream = new MD5CalculatingOutputStream(new CheckpointingOutputStream(jettySession.getBasicRemote().getSendStream(), localStatusUpdateIntervalMs, this::updateInProgressTransferSize));
             long bytesSent = inputStream.transferTo(outputStream);
             // We explicitly close the input and output to also catch any potential exceptions there. This is why we don't use try-with-resources.
             inputStream.close();
@@ -133,7 +136,7 @@ public class WebsocketUploadClient {
             logger.debug("{} Data sent: {} bytes, checksum={}", this, bytesSent, clientChecksum);
             jettySession.getBasicRemote().sendText(new FinishUploadMessage(clientChecksum).toString());
             state = State.EXPECTING_ACKNOWLEDGE;
-            UploadAcknowledgedMessage acknowledgedMessage = uploadAcknowledgedFuture.get(60, TimeUnit.SECONDS);
+            UploadAcknowledgedMessage acknowledgedMessage = uploadAcknowledgedFuture.get(timeoutSeconds, TimeUnit.SECONDS);
             String serverChecksum = acknowledgedMessage.checksum;
             if (!clientChecksum.equals(serverChecksum)) {
                 // This is actually redundant and should never be reached - in the current implementation, the server
@@ -144,7 +147,7 @@ public class WebsocketUploadClient {
             closeSessionNormally();
 
             // wait until the uploadSession final status is also set (should be a side effect of closing the session)
-            uploadSession.getFinalStatusFuture().get(60, TimeUnit.SECONDS);
+            uploadSession.getFinalStatusFuture().get(timeoutSeconds, TimeUnit.SECONDS);
         } catch (Exception exception) {
             closeCloseableOnException(inputStream, exception);
             closeCloseableOnException(outputStream, exception);
@@ -155,7 +158,7 @@ public class WebsocketUploadClient {
 
     private void updateInProgressTransferSize(long transferredBytes) {
         if (!uploadSession.getFinalStatusFuture().isDone()) {
-            uploadSession.setCurrentUploadStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.IN_PROGRESS, transferredBytes, null));
+            uploadSession.setCurrentStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.IN_PROGRESS, transferredBytes, null));
         }
     }
 

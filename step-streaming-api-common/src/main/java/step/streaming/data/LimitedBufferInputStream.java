@@ -15,33 +15,21 @@ import java.util.Objects;
  * the two argument constructor uses a configurable size.
  */
 @SuppressWarnings("NullableProblems")
-public class ClampedReadInputStream extends InputStream {
-    public static final int DEFAULT_READ_SIZE = 64;
-
+public class LimitedBufferInputStream extends InputStream {
     private final InputStream delegate;
     private final int maxReadSize;
 
     /**
-     * Constructs a clamped InputStream.
+     * Constructs an InputStream with limited buffering.
      *
      * @param delegate    the underlying input stream to wrap (must not be null)
      * @param maxReadSize the maximum number of bytes allowed per read operation (must be ≥ 1)
      */
-    public ClampedReadInputStream(InputStream delegate, int maxReadSize) {
+    public LimitedBufferInputStream(InputStream delegate, int maxReadSize) {
         this.delegate = Objects.requireNonNull(delegate, "delegate must not be null");
         if (maxReadSize < 1) throw new IllegalArgumentException("maxReadSize must be >= 1");
         this.maxReadSize = maxReadSize;
     }
-
-    /**
-     * Constructs a clamped InputStream with the default read size of 64 bytes.
-     *
-     * @param delegate the underlying input stream to wrap (must not be null)
-     */
-    public ClampedReadInputStream(InputStream delegate) {
-        this(delegate, DEFAULT_READ_SIZE);
-    }
-
 
     @Override
     public int read() throws IOException {
