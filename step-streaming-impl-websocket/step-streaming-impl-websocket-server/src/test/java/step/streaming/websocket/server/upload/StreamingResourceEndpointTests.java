@@ -36,6 +36,7 @@ import java.io.*;
 import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -389,4 +390,42 @@ public class StreamingResourceEndpointTests {
         Assert.assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
     }
 
+    @Test
+    public void testFailedDownload() throws Exception {
+        TestingWebsocketServer server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
+        URI uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
+        referenceProducer.setBaseUri(server.getURI());
+
+        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
+
+        testFailedDownloadWithInput(uploadProvider, "Failing");
+        testFailedDownloadWithInput(uploadProvider, "Failing\n");
+    }
+
+    private static void testFailedDownloadWithInput(WebsocketUploadProvider uploadProvider, String input) throws IOException, InterruptedException {
+        File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
+        try {
+            var uploadSession = uploadProvider.startLiveTextFileUpload(dataFile, new StreamingResourceMetadata("dummy.txt", TEXT_PLAIN, true), StandardCharsets.UTF_8);
+            var reference = uploadSession.getReference();
+            Files.writeString(dataFile.toPath(), input);
+            Thread.sleep(100);
+            // This will cause a failure because the file was not signalled to be complete
+            try {
+                uploadSession.close();
+            } catch (IOException expected) {
+
+            }
+            var download = new WebsocketDownload(reference);
+            ByteArrayOutputStream data = new ByteArrayOutputStream();
+            try (InputStream in = download.getInputStream()) {
+                in.transferTo(data);
+            }
+            // We expect numberOfLines==1, regardless of whether input was terminated by LB or not
+            Assert.assertEquals(new StreamingResourceStatus(StreamingResourceTransferStatus.FAILED, input.length(), 1L), download.getCurrentStatus());
+            String downloaded = data.toString();
+            Assert.assertEquals(input, downloaded);
+        } finally {
+            Files.deleteIfExists(dataFile.toPath());
+        }
+    }
 }

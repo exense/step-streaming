@@ -172,12 +172,10 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
         return file.length();
     }
 
-    /**
-     * Handles a failed upload. This implementation currently does nothing,
-     * as we decided to keep even failed data.
-     * @param resourceId the failed resource
-     */
-    public void handleFailedUpload(String resourceId) {
+    @Override
+    public boolean handleFailedUpload(String resourceId) {
+        // Do nothing, indicate that data was kept
+        return true;
     }
 
     /**
