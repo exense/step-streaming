@@ -10,9 +10,6 @@ import java.util.Objects;
  * <p>
  * This is useful for controlling downstream buffer handling behavior
  * in situations where excessive buffering is actually unwanted.
- * <p>
- * The one-argument constructor uses a default read size of 64 bytes,
- * the two argument constructor uses a configurable size.
  */
 @SuppressWarnings("NullableProblems")
 public class LimitedBufferInputStream extends InputStream {
