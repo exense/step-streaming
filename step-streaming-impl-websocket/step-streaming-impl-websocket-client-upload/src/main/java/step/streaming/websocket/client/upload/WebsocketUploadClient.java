@@ -87,6 +87,7 @@ public class WebsocketUploadClient {
 
     private void sendUploadRequestAndAwaitReply() throws IOException {
         StartUploadMessage request = new StartUploadMessage(uploadSession.getMetadata());
+        logger.info("{} Starting upload, metadata={}", this, request.metadata);
         state = State.EXPECTING_REFERENCE;
         jettySession.getBasicRemote().sendText(request.toString());
         try {
@@ -176,7 +177,7 @@ public class WebsocketUploadClient {
     private void onClose(CloseReason closeReason) {
         if (state == State.FINALIZED) {
             // normal closure
-            logger.info("{} Session closing, reason={}", this, closeReason);
+            logger.debug("{} Session closing, reason={}", this, closeReason);
             // uploadFinishedFuture is guaranteed to have completed before FINALIZED state is set
             UploadAcknowledgedMessage finishedMessage = uploadAcknowledgedFuture.join();
             uploadSession.getFinalStatusFuture().complete(new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, finishedMessage.size, finishedMessage.numberOflines));

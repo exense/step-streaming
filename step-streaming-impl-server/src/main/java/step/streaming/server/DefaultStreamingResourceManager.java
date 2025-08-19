@@ -120,7 +120,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
                 }
             }
             StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(StreamingResourceTransferStatus.COMPLETED, finalSize, correctedNumberOfLines);
-            logger.debug("Resource marked COMPLETED: {} (size: {})", resourceId, finalSize);
+            logger.info("Resource marked COMPLETED: {} (size: {})", resourceId, finalSize);
             StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
             emitStatus(resourceId, status);
         } catch (IOException e) {
