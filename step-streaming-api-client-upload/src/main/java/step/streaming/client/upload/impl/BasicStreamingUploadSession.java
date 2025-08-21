@@ -101,6 +101,7 @@ public class BasicStreamingUploadSession extends AbstractStreamingTransfer imple
         }
     }
 
+    @Override
     public void onClose(ThrowingConsumer<String> onCloseCallback) {
         onCloseCallbacks.add(onCloseCallback);
     }

@@ -4,6 +4,7 @@ import step.streaming.client.StreamingTransfer;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.data.EndOfInputSignal;
+import step.streaming.util.ThrowingConsumer;
 
 import java.util.concurrent.*;
 
@@ -78,4 +79,6 @@ public interface StreamingUploadSession extends StreamingTransfer {
     default void cancel(Exception optionalCause) {
         getEndOfInputSignal().completeExceptionally(optionalCause != null ? optionalCause : new CancellationException("Cancelled by user"));
     }
+
+    void onClose(ThrowingConsumer<String> onCloseCallback);
 }

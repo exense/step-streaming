@@ -2,6 +2,7 @@ package step.streaming.client.upload;
 
 import step.streaming.common.StreamingResourceMetadata;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -15,7 +16,7 @@ import java.nio.charset.Charset;
  * It is named "provider" instead of "factory" to convey a less technical,
  * more user-oriented concept.
  */
-public interface StreamingUploadProvider {
+public interface StreamingUploadProvider extends Closeable {
 
     /**
      * Starts a streaming upload of a binary file.
@@ -75,4 +76,10 @@ public interface StreamingUploadProvider {
      */
     StreamingUploadSession startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws IOException;
 
+    /**
+     * Closing a provider means cancelling any potential ongoing uploads.
+     * This method must not throw exceptions.
+     */
+    @Override
+    void close();
 }

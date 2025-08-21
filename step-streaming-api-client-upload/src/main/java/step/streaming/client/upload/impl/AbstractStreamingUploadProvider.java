@@ -13,8 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 /**
  * Abstract base class for implementing a {@link StreamingUploadProvider}.
@@ -119,6 +118,12 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
         this.uploadBufferSize = uploadBufferSize;
     }
 
+    private final CopyOnWriteArrayList<StreamingUploadSession> activeSessions = new CopyOnWriteArrayList<>();
+
+    // once closing, no more uploads will be accepted, otherwise no relevant limits.
+    private static final int ALL_PERMITS = Integer.MAX_VALUE;
+    private final Semaphore admissionSemaphore = new Semaphore(ALL_PERMITS, false);
+
     /**
      * Starts a live upload of a binary file.
      * <p>
@@ -160,15 +165,25 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @throws IOException if the file cannot be read or the stream cannot be created.
      */
     protected StreamingUploadSession startLiveFileUpload(File fileToStream, StreamingResourceMetadata metadata, Charset convertFromCharset) throws IOException {
-        Objects.requireNonNull(fileToStream);
-        Objects.requireNonNull(metadata);
-        EndOfInputSignal endOfInputSignal = new EndOfInputSignal();
-        LiveFileInputStream liveInputStream = new LiveFileInputStream(fileToStream, endOfInputSignal, uploadFilePollInterval);
-        InputStream uploadInputStream = convertFromCharset == null
-                ? liveInputStream
-                : new UTF8TranscodingTextInputStream(liveInputStream, convertFromCharset);
-        InputStream limitedBufferInputStream = new LimitedBufferInputStream(uploadInputStream, uploadBufferSize);
-        return startLiveFileUpload(limitedBufferInputStream, metadata, endOfInputSignal);
+        if (!admissionSemaphore.tryAcquire()) {
+            throw new IOException("Upload provider is closed, not accepting new uploads");
+        }
+        try {
+            Objects.requireNonNull(fileToStream);
+            Objects.requireNonNull(metadata);
+            EndOfInputSignal endOfInputSignal = new EndOfInputSignal();
+            LiveFileInputStream liveInputStream = new LiveFileInputStream(fileToStream, endOfInputSignal, uploadFilePollInterval);
+            InputStream uploadInputStream = convertFromCharset == null
+                    ? liveInputStream
+                    : new UTF8TranscodingTextInputStream(liveInputStream, convertFromCharset);
+            InputStream limitedBufferInputStream = new LimitedBufferInputStream(uploadInputStream, uploadBufferSize);
+            StreamingUploadSession session = startLiveFileUpload(limitedBufferInputStream, metadata, endOfInputSignal);
+            session.onClose(ignoredMessage -> activeSessions.remove(session));
+            activeSessions.add(session);
+            return session;
+        } finally {
+            admissionSemaphore.release();
+        }
     }
 
     /**
@@ -187,4 +202,26 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
     protected abstract StreamingUploadSession startLiveFileUpload(InputStream sourceInputStream,
                                                                   StreamingResourceMetadata metadata,
                                                                   EndOfInputSignal endOfInputSignal) throws IOException;
+
+    @Override
+    public void close() {
+        // Acquire all "upload permits" and never release them.
+        // If an upload is currently being started (which would be aborted anyway right away by the code below),
+        // this will wait for the instantiation to complete, followed by blocking any new uploads by fully "using"
+        // the semaphore. Note that this is a highly improbable scenario: we don't actually expect
+        // any uploads to be performed at the stage when we're closing, but you never know what weird ways to use things
+        // people might invent :-D - so this is an effective and performant lock-free solution.
+        admissionSemaphore.acquireUninterruptibly(ALL_PERMITS);
+
+        // Close any remaining sessions. This will abort any session that has not been properly
+        // closed before, while being a no-op if it was already closed -- so potential race conditions don't
+        // really matter here.
+        for (StreamingUploadSession session : activeSessions) {
+            try {
+                session.close();
+            } catch (IOException e) {
+                // this should never happen, and if it does - well, we're aborting the upload anyway.
+            }
+        }
+    }
 }
