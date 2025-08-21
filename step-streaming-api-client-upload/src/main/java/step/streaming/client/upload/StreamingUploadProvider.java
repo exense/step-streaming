@@ -16,7 +16,7 @@ import java.nio.charset.Charset;
  * It is named "provider" instead of "factory" to convey a less technical,
  * more user-oriented concept.
  */
-public interface StreamingUploadProvider extends Closeable {
+public interface StreamingUploadProvider {
 
     /**
      * Starts a streaming upload of a binary file.
@@ -80,6 +80,5 @@ public interface StreamingUploadProvider extends Closeable {
      * Closing a provider means cancelling any potential ongoing uploads.
      * This method must not throw exceptions.
      */
-    @Override
     void close();
 }

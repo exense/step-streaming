@@ -2,7 +2,6 @@ package step.streaming.client.upload;
 
 import step.streaming.common.StreamingResourceMetadata;
 
-import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -30,7 +29,7 @@ import java.util.Objects;
  * @see StreamingUploadProvider
  * @see StreamingUploadSession
  */
-public class StreamingUploads implements Closeable {
+public class StreamingUploads {
 
     private final StreamingUploadProvider provider;
 
@@ -122,7 +121,6 @@ public class StreamingUploads implements Closeable {
         return new StreamingUpload(session);
     }
 
-    @Override
     public void close() {
         provider.close();
     }
