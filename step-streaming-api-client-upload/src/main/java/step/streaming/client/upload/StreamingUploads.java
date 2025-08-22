@@ -120,4 +120,8 @@ public class StreamingUploads {
                         false));
         return new StreamingUpload(session);
     }
+
+    public void close() {
+        provider.close();
+    }
 }
