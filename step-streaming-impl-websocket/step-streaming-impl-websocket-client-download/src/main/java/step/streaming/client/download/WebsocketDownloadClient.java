@@ -139,9 +139,6 @@ public class WebsocketDownloadClient implements AutoCloseable {
             throw new IllegalArgumentException("Invalid offsets: " + startOffset + ", " + endOffset);
         }
         StreamingResourceStatus status = lastReceivedStatus.get();
-        if (status.getTransferStatus() == StreamingResourceTransferStatus.FAILED) {
-            throw new IllegalStateException("Remote resource indicates a FAILED resource");
-        }
         if (endOffset > status.getCurrentSize()) {
             throw new IllegalArgumentException("Invalid end offset: " + endOffset + " > " + status.getCurrentSize());
         }

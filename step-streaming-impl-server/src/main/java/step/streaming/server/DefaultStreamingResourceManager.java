@@ -96,32 +96,36 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
         }
     }
 
+    private StreamingResourceStatusUpdate getFinalStatusUpdate(String resourceId, StreamingResourceTransferStatus transferStatus) throws IOException {
+        long finalSize = storage.getCurrentSize(resourceId);
+        LinebreakIndex linebreakIndex = storage.getLinebreakIndex(resourceId);
+        Long correctedNumberOfLines = null;
+        // Line numbers are a PITA in some edge cases, because not all files properly end with a linebreak.
+        // Note that this only (potentially) concerns the very last line of the file. If the last byte
+        // in the file is a linebreak, all is good -- the file is properly terminated.
+        // However, if it is NOT, then the last line will span from the position of the last LB+1 to the end of the file.
+        // We only enter this block at all if an index is present (i.e. line indexing is on)
+        if (linebreakIndex != null) {
+            long linebreakCount = linebreakIndex.getTotalEntries();
+            if (linebreakCount > 0) {
+                long lastLb = linebreakIndex.getLinebreakPosition(linebreakCount - 1);
+                if (lastLb != finalSize - 1) {
+                    correctedNumberOfLines = linebreakCount + 1;
+                }
+            } else {
+                // even more exotic: no linebreak at all -> single line, UNLESS the file has 0 bytes.
+                correctedNumberOfLines = finalSize > 0 ? 1L : 0L;
+            }
+        }
+        return new StreamingResourceStatusUpdate(transferStatus, finalSize, correctedNumberOfLines);
+    }
+
     @Override
     public void markCompleted(String resourceId) {
         try {
-            long finalSize = storage.getCurrentSize(resourceId);
-            LinebreakIndex linebreakIndex = storage.getLinebreakIndex(resourceId);
-            Long correctedNumberOfLines = null;
-            // Line numbers are a PITA in some edge cases, because not all files properly end with a linebreak.
-            // Note that this only (potentially) concerns the very last line of the file. If the last byte
-            // in the file is a linebreak, all is good -- the file is properly terminated.
-            // However, if it is NOT, then the last line will span from the position of the last LB+1 to the end of the file.
-            // We only enter this block at all if an index is present (i.e. line indexing is on)
-            if (linebreakIndex != null) {
-                long linebreakCount = linebreakIndex.getTotalEntries();
-                if (linebreakCount > 0) {
-                    long lastLb = linebreakIndex.getLinebreakPosition(linebreakCount - 1);
-                    if (lastLb != finalSize - 1) {
-                        correctedNumberOfLines = linebreakCount + 1;
-                    }
-                } else {
-                    // even more exotic: no linebreak at all -> single line, UNLESS the file has 0 bytes.
-                    correctedNumberOfLines = finalSize > 0 ? 1L : 0L;
-                }
-            }
-            StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(StreamingResourceTransferStatus.COMPLETED, finalSize, correctedNumberOfLines);
-            logger.debug("Resource marked COMPLETED: {} (size: {})", resourceId, finalSize);
+            StreamingResourceStatusUpdate update = getFinalStatusUpdate(resourceId, StreamingResourceTransferStatus.COMPLETED);
             StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
+            logger.debug("Resource marked COMPLETED: {}, status={}", resourceId, status);
             emitStatus(resourceId, status);
         } catch (IOException e) {
             logger.warn("IOException during markCompleted for {}, marking as failed instead", resourceId, e);
@@ -131,10 +135,21 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
 
     @Override
     public void markFailed(String resourceId) {
-        storage.handleFailedUpload(resourceId);
-        StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(
-                StreamingResourceTransferStatus.FAILED, null, null
-        );
+        boolean stillExists = storage.handleFailedUpload(resourceId);
+        StreamingResourceStatusUpdate update;
+        if (stillExists) {
+            // update line numbers
+            try {
+                update = getFinalStatusUpdate(resourceId, StreamingResourceTransferStatus.FAILED);
+            } catch (IOException e) {
+                // should never happen, but if it does, only update the status itself, not the sizes
+                logger.error("Unexpected error while updating status for failed upload, resourceId={}", resourceId, e);
+                update = new StreamingResourceStatusUpdate(StreamingResourceTransferStatus.FAILED, null, null);
+            }
+        } else {
+            // file was deleted, also update size
+            update = new StreamingResourceStatusUpdate(StreamingResourceTransferStatus.FAILED, 0L, 0L);
+        }
         StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
         logger.warn("Resource marked FAILED: {}, status={}", resourceId, status);
         emitStatus(resourceId, status);
