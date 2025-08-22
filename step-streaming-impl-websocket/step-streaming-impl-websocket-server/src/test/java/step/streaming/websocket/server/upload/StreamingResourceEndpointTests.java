@@ -49,13 +49,15 @@ public class StreamingResourceEndpointTests {
     private DefaultStreamingResourceManager manager;
     private WebsocketServerEndpointSessionsHandler sessionsHandler;
     private URITemplateBasedReferenceProducer referenceProducer;
+    private TestingWebsocketServer server;
+    private URI uploadUri;
 
     private static final String FAUST_ISO8859_CHECKSUM = "317c7a8df8c817c80bf079cfcbbc6686";
     private static final String FAUST_UTF8_CHECKSUM = "540441d13a31641d7775d91c46c94511";
 
 
     @Before
-    public void setUp() throws IOException {
+    public void setUp() throws Exception {
         sessionsHandler = new DefaultWebsocketServerEndpointSessionsHandler();
         storageBackend = new TestingStorageBackend(1000L, false);
         catalogBackend = new InMemoryCatalogBackend();
@@ -64,12 +66,16 @@ public class StreamingResourceEndpointTests {
                 referenceProducer,
                 null
         );
+        server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
+        referenceProducer.setBaseUri(server.getURI());
+        uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
     }
 
     @After
     public void tearDown() throws Exception {
-        Thread.sleep(1000);
+        Thread.sleep(100);
         sessionsHandler.shutdown();
+        server.stop();
         storageBackend.cleanup();
     }
 
@@ -98,10 +104,6 @@ public class StreamingResourceEndpointTests {
     @Test
     public void testLowLevelUploadFollowedByOneShotDownload() throws Exception {
         long DATA_SIZE = 500_000L;
-        TestingWebsocketServer server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
-        referenceProducer.setBaseUri(server.getURI());
-        URI uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
-
         StreamingResourceMetadata metadata = new StreamingResourceMetadata("test.txt", TEXT_PLAIN, true);
         WebsocketUploadSession upload = new WebsocketUploadSession(metadata, new EndOfInputSignal());
         // TODO: timeout
@@ -123,10 +125,6 @@ public class StreamingResourceEndpointTests {
 
         Assert.assertEquals(DATA_SIZE, downloadClient.requestChunkTransfer(0, DATA_SIZE, OutputStream.nullOutputStream()).get().longValue());
         downloadClient.close();
-        // give the system a few ms to finalize sessions
-        Thread.sleep(50);
-        sessionsHandler.shutdown();
-        server.stop();
     }
 
     private static class RandomBytesProducer {
@@ -181,10 +179,6 @@ public class StreamingResourceEndpointTests {
         long DATA_SIZE = 200_000_000L;
         RandomBytesProducer randomBytesProducer = new RandomBytesProducer(DATA_SIZE, 5, TimeUnit.SECONDS);
 
-        TestingWebsocketServer server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
-        URI uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
-        referenceProducer.setBaseUri(server.getURI());
-
         WebsocketUploadProvider provider = new WebsocketUploadProvider(uploadUri);
         StreamingUploadSession upload = provider.startLiveBinaryFileUpload(randomBytesProducer.file, new StreamingResourceMetadata("test.bin", APPLICATION_OCTET_STREAM, true));
         WebsocketDownload download = new WebsocketDownload(upload.getReference());
@@ -218,9 +212,6 @@ public class StreamingResourceEndpointTests {
         md5Out.close();
         Assert.assertEquals(randomBytesProducer.checksum, md5Out.getChecksum());
         download.close();
-        Thread.sleep(50);
-        sessionsHandler.shutdown();
-        server.stop();
     }
 
     @Test
@@ -231,10 +222,6 @@ public class StreamingResourceEndpointTests {
         long OUTPUT_DATA_SIZE = 10324; // in UTF-8 format, i.e. what is expected to arrive server-side
         Long OUTPUT_LINES = 296L;
         FileBytesProducer isoBytesProducer = new FileBytesProducer(sourceFile, 5, TimeUnit.SECONDS);
-
-        TestingWebsocketServer server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
-        URI uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
-        referenceProducer.setBaseUri(server.getURI());
 
         WebsocketUploadProvider provider = new WebsocketUploadProvider(uploadUri);
         // This will transcode the file to UTF-8 on upload (on the fly)
@@ -276,17 +263,10 @@ public class StreamingResourceEndpointTests {
         md5Out.close();
         Assert.assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
         download.close();
-        Thread.sleep(50);
-        sessionsHandler.shutdown();
-        server.stop();
     }
 
     @Test
     public void testErrorScenarios() throws Exception {
-        TestingWebsocketServer server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
-        URI uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
-        referenceProducer.setBaseUri(server.getURI());
-
         File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
         FileBytesProducer uploadProducer = new FileBytesProducer(sourceFile, 15, TimeUnit.SECONDS);
 
@@ -315,13 +295,8 @@ public class StreamingResourceEndpointTests {
             Assert.assertTrue(e.getMessage().contains("Upload session was closed before input was signalled to be complete"));
         }
     }
-
     @Test
     public void testLineBasedDownload() throws Exception {
-        TestingWebsocketServer server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
-        URI uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
-        referenceProducer.setBaseUri(server.getURI());
-
         File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
         FileBytesProducer uploadProducer = new FileBytesProducer(sourceFile, 15, TimeUnit.SECONDS);
 
@@ -379,24 +354,17 @@ public class StreamingResourceEndpointTests {
         downloadThread.join();
         downloadClient.close();
 
-        Thread.sleep(50);
-        sessionsHandler.shutdown();
-        server.stop();
-
         // we retrieved the data using line-based access, but this should be exactly equivalent to the raw file
         Assert.assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
     }
 
     @Test
     public void testFailedDownload() throws Exception {
-        TestingWebsocketServer server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
-        URI uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
-        referenceProducer.setBaseUri(server.getURI());
-
         WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
 
         testFailedDownloadWithInput(uploadProvider, "Failing");
         testFailedDownloadWithInput(uploadProvider, "Failing\n");
+
     }
 
     private static void testFailedDownloadWithInput(WebsocketUploadProvider uploadProvider, String input) throws IOException, InterruptedException {
