@@ -1,11 +1,9 @@
-package step.streaming.server.data;
+package step.streaming.data;
 
 import org.junit.Test;
-import step.streaming.data.util.ThrowingConsumer;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -112,21 +110,6 @@ public class LinebreakDetectingOutputStreamTests {
         assertTrue(dummy.isEmpty());
         assertTrue(target.flushed);
         assertTrue(target.closed);
-    }
-
-    @Test
-    public void performanceTest() throws Exception {
-        File f = new File("/home/cl/syslog.txt");
-        InputStream in = new FileInputStream(f);
-        File indexFile = Files.createTempFile("lbidx", ".bin").toFile();
-        indexFile.deleteOnExit();
-        LinebreakIndexFile index = new LinebreakIndexFile(indexFile, 0, LinebreakIndexFile.Mode.WRITE);
-        ThrowingConsumer<Long> consumer = line -> index.addLinebreakPosition(line);
-        LinebreakDetectingOutputStream lbos = new LinebreakDetectingOutputStream(OutputStream.nullOutputStream(), consumer);
-        long d = System.currentTimeMillis();
-        in.transferTo(lbos);
-        d =  System.currentTimeMillis() - d;
-        System.out.println("d=" + d);
     }
 
     private static class TestableOutputStream extends ByteArrayOutputStream {

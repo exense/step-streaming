@@ -1,4 +1,4 @@
-package step.streaming.data.util;
+package step.streaming.util;
 
 @FunctionalInterface
 public interface ThrowingConsumer<T> {

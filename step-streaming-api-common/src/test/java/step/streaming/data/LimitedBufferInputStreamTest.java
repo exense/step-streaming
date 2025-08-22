@@ -9,7 +9,7 @@ import java.io.InputStream;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-public class ClampedReadInputStreamTest {
+public class LimitedBufferInputStreamTest {
 
     private static byte[] createData(int size) {
         byte[] data = new byte[size];
@@ -21,7 +21,7 @@ public class ClampedReadInputStreamTest {
     public void testReadClampsBufferSize() throws IOException {
         byte[] original = createData(100);
         InputStream base = new ByteArrayInputStream(original);
-        ClampedReadInputStream clamped = new ClampedReadInputStream(base, 10);
+        LimitedBufferInputStream clamped = new LimitedBufferInputStream(base, 10);
 
         byte[] buffer = new byte[50]; // deliberately larger than clamp
         int read = clamped.read(buffer, 0, buffer.length);
@@ -36,7 +36,7 @@ public class ClampedReadInputStreamTest {
     public void testReadAllWithClamping() throws IOException {
         byte[] original = createData(25);
         InputStream base = new ByteArrayInputStream(original);
-        ClampedReadInputStream clamped = new ClampedReadInputStream(base, 8);
+        LimitedBufferInputStream clamped = new LimitedBufferInputStream(base, 8);
 
         byte[] buffer = new byte[10]; // buffer larger than clamp
         int total = 0;
@@ -57,7 +57,7 @@ public class ClampedReadInputStreamTest {
     public void testSingleByteReadUnchanged() throws IOException {
         byte[] original = {42, 43, 44};
         InputStream base = new ByteArrayInputStream(original);
-        ClampedReadInputStream clamped = new ClampedReadInputStream(base, 1);
+        LimitedBufferInputStream clamped = new LimitedBufferInputStream(base, 1);
 
         assertEquals(42, clamped.read());
         assertEquals(43, clamped.read());
@@ -67,12 +67,12 @@ public class ClampedReadInputStreamTest {
 
     @Test(expected = IllegalArgumentException.class)
     public void testInvalidClampSizeThrows() {
-        new ClampedReadInputStream(new ByteArrayInputStream(new byte[0]), 0);
+        new LimitedBufferInputStream(new ByteArrayInputStream(new byte[0]), 0);
     }
 
     @SuppressWarnings("resource")
     @Test(expected = NullPointerException.class)
     public void testNullDelegateThrows() {
-        new ClampedReadInputStream(null, 10);
+        new LimitedBufferInputStream(null, 10);
     }
 }

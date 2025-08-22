@@ -224,15 +224,15 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
         if (index == null) {
             throw new IllegalStateException("Linebreak index not found for resource " + resourceId);
         }
-        if (startingLinebreakIndex < 0 || startingLinebreakIndex >= status.getNumberOfLines()) {
-            throw new IndexOutOfBoundsException("Linebreak index out of bounds: " + startingLinebreakIndex + "; acceptable values: [0, " + status.getNumberOfLines() + "[");
-        }
         if (count < 0) {
             throw new IllegalArgumentException("count must not be negative");
         }
-        // edge case -> return an empty stream
+        // edge case -> return an empty stream when count is 0, regardless of requested index.
         if (count == 0) {
             return Stream.empty();
+        }
+        if (startingLinebreakIndex < 0 || startingLinebreakIndex >= status.getNumberOfLines()) {
+            throw new IndexOutOfBoundsException("Linebreak index out of bounds: " + startingLinebreakIndex + "; acceptable values: [0, " + status.getNumberOfLines() + "[");
         }
         long lastIndex = startingLinebreakIndex + count;
         if (lastIndex > status.getNumberOfLines()) {

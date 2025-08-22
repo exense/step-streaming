@@ -163,6 +163,8 @@ public class LinebreakIndexFileTests {
         writer.close();
     }
 
+    // FIXME: these limits are currently higher than I'd like them to be because the build server (or agent) seems
+    // to have issues - it's up to 40 times slower than running things locally (it used to be fast enough though...)
     @Test
     public void performanceTest() throws Exception {
         long count = 1_000_000L;
@@ -181,7 +183,7 @@ public class LinebreakIndexFileTests {
             d = System.currentTimeMillis() - d;
             System.out.printf("reading %d entries sequentially took %d ms%n", count, d);
             // usually around 150-200 ms
-            Assert.assertTrue("Reading data took more than 2 seconds", d < 2000);
+            Assert.assertTrue("Reading data took more than 5 seconds", d < 5000);
             d = System.currentTimeMillis();
             for (long i = count - 1; i >= 0; --i) {
                 Assert.assertEquals(i, index.getLinebreakPosition(i));
@@ -189,7 +191,7 @@ public class LinebreakIndexFileTests {
             d = System.currentTimeMillis() - d;
             System.out.printf("reading %d entries in reverse order took %d ms%n", count, d);
             // usually around 350 ms
-            Assert.assertTrue("Reading data (reverse order) took more than 3 seconds", d < 3000);
+            Assert.assertTrue("Reading data (reverse order) took more than 10 seconds", d < 10000);
         }
     }
 

@@ -4,8 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.data.CheckpointingOutputStream;
 import step.streaming.data.FileChunk;
-import step.streaming.data.util.ThrowingConsumer;
-import step.streaming.server.data.LinebreakDetectingOutputStream;
+import step.streaming.util.ThrowingConsumer;
+import step.streaming.data.LinebreakDetectingOutputStream;
 import step.streaming.server.data.LinebreakIndexFile;
 
 import java.io.*;

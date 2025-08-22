@@ -67,6 +67,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             try {
                 resourceId = manager.registerNewResource(metadata, uploadContextId);
                 StreamingResourceReference reference = manager.getReferenceFor(resourceId);
+                logger.info("{}: Starting streaming upload, metadata={}", resourceId, metadata);
                 state = State.UPLOADING;
                 ReadyForUploadMessage reply = new ReadyForUploadMessage(reference);
                 session.getBasicRemote().sendText(reply.toString());
@@ -108,7 +109,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 throw new IllegalStateException("Unexpected size mismatch: bytesWritten=" + bytesWritten + ", but status indicates current size=" + status.getCurrentSize());
             }
             String checksum = md5Input.getChecksum();
-            logger.info("Wrote {} bytes to {}, checksum={}, numberOfLines={}; sending finished message", bytesWritten, resourceId, checksum, status.getNumberOfLines());
+            logger.info("{}: Upload finished, bytes={}, numberOfLines={}", resourceId, bytesWritten, status.getNumberOfLines());
             state = State.EXPECTING_FINISHEDMESSAGE;
             uploadAcknowledgedMessage = new UploadAcknowledgedMessage(bytesWritten, status.getNumberOfLines(), checksum);
         } catch (IOException e) {
