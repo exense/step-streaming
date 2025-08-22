@@ -67,7 +67,12 @@ public interface StreamingResourcesStorageBackend {
      */
     long getCurrentSize(String resourceId) throws IOException;
 
-    void handleFailedUpload(String resourceId);
+    /**
+     * Handles a failed upload. Return value indicates whether the data still exists ({@code true}), or was deleted ({@code false})
+     * @param resourceId internal resource identifier
+     * @return return value indicating if the data still exists
+     */
+    boolean handleFailedUpload(String resourceId);
 
     LinebreakIndex getLinebreakIndex(String resourceId) throws IOException;
 

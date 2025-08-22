@@ -113,10 +113,6 @@ public class WebsocketDownload extends AbstractStreamingTransfer implements Stre
             if (status == null) {
                 throw new IOException("Resource unavailable");
             }
-            StreamingResourceTransferStatus transferStatus = status.getTransferStatus();
-            if (transferStatus == StreamingResourceTransferStatus.FAILED) {
-                throw new IOException("Resource unavailable, server indicates resource status " + transferStatus);
-            }
             if (startOffset < 0 || startOffset > endOffset) {
                 throw new IOException("Illegal start/end offsets: [" + startOffset + ", " + endOffset + "]");
             }
@@ -219,13 +215,10 @@ public class WebsocketDownload extends AbstractStreamingTransfer implements Stre
         }
 
         private TrackablePipedInputStream getStreamForStatus(StreamingResourceStatus status) throws IOException {
-            if (status.getTransferStatus() == StreamingResourceTransferStatus.FAILED) {
-                throw new IOException("Resource unavailable, server indicates resource status " + StreamingResourceTransferStatus.FAILED);
-            }
             if (status.getCurrentSize() > bytesRead) {
                 return getChunkStream(bytesRead, status.getCurrentSize());
             }
-            if (status.getTransferStatus() == StreamingResourceTransferStatus.COMPLETED) {
+            if (status.getTransferStatus() == StreamingResourceTransferStatus.COMPLETED || status.getTransferStatus() == StreamingResourceTransferStatus.FAILED) {
                 logger.debug("Transfer status is {} and all bytes were received, signaling end of data", status.getTransferStatus());
                 return null; // normal EOF, no more streams required
             }
