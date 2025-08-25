@@ -66,7 +66,7 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
         }
         this.flushAndNotifyIntervalMillis = flushAndNotifyIntervalMillis;
         this.paranoidSyncMode = paranoidSyncMode;
-        logger.info("Initialized storage backend: baseDirectory={}, hashIdsBeforeStoring={}, flushAndNotifyIntervalMillis={}, paranoidSyncMode={}", baseDirectory, hashIdsBeforeStoring, flushAndNotifyIntervalMillis, paranoidSyncMode);
+        logger.info("Initialized storage backend: baseDirectory={}, hashIdsBeforeStoring={}, flushAndNotifyIntervalMillis={}, paranoidSyncMode={}", baseDirectory.getAbsolutePath(), hashIdsBeforeStoring, flushAndNotifyIntervalMillis, paranoidSyncMode);
     }
 
     private File validateBaseDirectory(File baseDir) {
@@ -76,7 +76,7 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
         try {
             Files.createDirectories(baseDir.toPath());
         } catch (IOException e) {
-            throw new RuntimeException("Failed to create directory: " + baseDir, e);
+            throw new RuntimeException("Failed to create directory: " + baseDir.getAbsolutePath(), e);
         }
         return baseDir;
     }
