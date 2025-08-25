@@ -43,7 +43,7 @@ import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.AP
 import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN;
 
 public class StreamingResourceEndpointTests {
-    private static final Logger logger = LoggerFactory.getLogger("TEST");
+    private static final Logger logger = LoggerFactory.getLogger("UNITTEST");
     private TestingStorageBackend storageBackend;
     private InMemoryCatalogBackend catalogBackend;
     private DefaultStreamingResourceManager manager;
@@ -58,6 +58,7 @@ public class StreamingResourceEndpointTests {
 
     @Before
     public void setUp() throws Exception {
+        logger.info("setUp() starting");
         sessionsHandler = new DefaultWebsocketServerEndpointSessionsHandler();
         storageBackend = new TestingStorageBackend(1000L, false);
         catalogBackend = new InMemoryCatalogBackend();
@@ -69,14 +70,17 @@ public class StreamingResourceEndpointTests {
         server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
         referenceProducer.setBaseUri(server.getURI());
         uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
+        logger.info("setUp() done, server=" + server);
     }
 
     @After
     public void tearDown() throws Exception {
+        logger.info("tearDown() starting, server=" + server);
         Thread.sleep(100);
         sessionsHandler.shutdown();
         server.stop();
         storageBackend.cleanup();
+        logger.info("tearDown() done");
     }
 
     private ServerEndpointConfig uploadConfig() {
