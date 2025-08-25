@@ -9,6 +9,7 @@ import step.streaming.data.LinebreakDetectingOutputStream;
 import step.streaming.server.data.LinebreakIndexFile;
 
 import java.io.*;
+import java.nio.file.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Objects;
@@ -27,7 +28,7 @@ import java.util.function.Function;
  * Something like that may be required in Databases for absolute consistency, but it's much less relevant here
  * as long as the final write is guaranteed to sync to the file system.
  * <p>
- * I had initially enabled it (without the flag), only to wonder why aeverything was extremely slow.
+ * I had initially enabled it (without the flag), only to wonder why everything was extremely slow.
  * From the full test suite, where a file is uploaded and downloaded in parallel, then downloaded again: For a 5GB
  * scenario (thus 15GB total transfers), this takes around 30 seconds in non-paranoid mode, but 7 HOURS in paranoid mode.
  * <p>
@@ -65,22 +66,43 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
         }
         this.flushAndNotifyIntervalMillis = flushAndNotifyIntervalMillis;
         this.paranoidSyncMode = paranoidSyncMode;
-        logger.info("Initialized storage backend: baseDirectory={}, hashIdsBeforeStoring={}, flushAndNotifyIntervalMillis={}, paranoidSyncMode={}", baseDirectory, hashIdsBeforeStoring, flushAndNotifyIntervalMillis, paranoidSyncMode);
+        logger.info("Initialized storage backend: baseDirectory={}, hashIdsBeforeStoring={}, flushAndNotifyIntervalMillis={}, paranoidSyncMode={}", baseDirectory.getAbsolutePath(), hashIdsBeforeStoring, flushAndNotifyIntervalMillis, paranoidSyncMode);
     }
 
     private File validateBaseDirectory(File baseDir) {
         if (baseDir.exists() && !baseDir.isDirectory()) {
             throw new IllegalArgumentException(baseDir + " is not a directory");
         }
-        if (!baseDir.exists() && !baseDir.mkdirs()) {
-            throw new RuntimeException("Failed to create directory: " + baseDir);
+        try {
+            Files.createDirectories(baseDir.toPath());
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to create directory: " + baseDir.getAbsolutePath(), e);
         }
         return baseDir;
     }
 
     @Override
     public void prepareForWrite(String resourceId, boolean enableLineCounting) throws IOException {
-        File file = resolveFileForId(resourceId, true);
+        File file = resolveFileForId(resourceId);
+
+        // Ensure datafile exists. This prevents concurrent cleanup from potentially deleting the containing directory.
+        // This is probably over-engineered, but correct :D
+        Path p = file.toPath();
+        try {
+            Files.createDirectories(p.getParent());
+            Files.createFile(p);
+        } catch (FileAlreadyExistsException ok) {
+            // already present: done
+        } catch (NoSuchFileException e) {
+            // parent got pruned between the two calls: recreate and try once more
+            Files.createDirectories(p.getParent());
+            try {
+                Files.createFile(p);
+            } catch (FileAlreadyExistsException ok) {
+                // created by someone else in the meantime: done
+            }
+        }
+
         if (enableLineCounting) {
             LinebreakIndexFile.createIfNeeded(file);
         }
@@ -93,7 +115,7 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
     }
 
     private LinebreakIndexFile getLinebreakIndexFile(String resourceId, boolean forWrite) throws IOException {
-        File file = resolveFileForId(resourceId, false);
+        File file = resolveFileForId(resourceId);
         if (forWrite) {
             return LinebreakIndexFile.openIfExistsForWrite(file, file.length());
         } else {
@@ -105,7 +127,7 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
     public void writeChunk(String resourceId, InputStream input, Consumer<Long> fileSizeConsumer, Consumer<Long> linebreakCountConsumer) throws IOException {
         // In the current implementation, uploads are one-shot, i.e. the file is uploaded in a single chunk. However,
         // it could also be a resuming/appending write, hence we account for that by "resuming" from the current file size (0 if non-existent)
-        File file = resolveFileForId(resourceId, false);
+        File file = resolveFileForId(resourceId);
         long startOffset = file.length();
         // NOTE: indexFile will be null if line-counting was not requested at registration time
         LinebreakIndexFile indexFile = getLinebreakIndexFile(resourceId, true);
@@ -127,8 +149,6 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
                 return underlyingStream;
             }
         };
-
-
 
         // This will auto-close the input and output streams, but we need to manually handle the indexFile because it
         // may be null.
@@ -158,20 +178,27 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
 
     @Override
     public InputStream openReadStream(String resourceId, long start, long end) throws IOException {
-        // special case for no-yet-present resources
+        // Micro-optimization for just-created, but not yet written-to, files
         if (start == 0 && end == 0) {
             return new ByteArrayInputStream(new byte[0]);
         }
-        File file = resolveFileForId(resourceId, false);
+        File file = resolveFileForId(resourceId);
         return FileChunk.getInputStream(file, start, end);
     }
 
     @Override
     public long getCurrentSize(String resourceId) throws IOException {
-        File file = resolveFileForId(resourceId, false);
+        File file = resolveFileForId(resourceId);
         return file.length();
     }
 
+    /**
+     * Handles a failed upload. This implementation currently does nothing,
+     * as we decided to keep even failed data.
+     *
+     * @param resourceId the failed resource
+     * @return {@code} true because data will still be present
+     */
     @Override
     public boolean handleFailedUpload(String resourceId) {
         // Do nothing, indicate that data was kept
@@ -181,17 +208,9 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
     /**
      * Resolves the file path for a given resource ID.
      */
-    private File resolveFileForId(String id, boolean createDirectories) throws IOException {
+    private File resolveFileForId(String id) {
         String path = hashIdsBeforeStoring ? hashId(id) : id;
-        File file = buildFilePath(path, id);
-
-        if (createDirectories) {
-            File parent = file.getParentFile();
-            if (!parent.exists() && !parent.mkdirs()) {
-                throw new IOException("Failed to create directory: " + parent);
-            }
-        }
-        return file;
+        return buildFilePath(path, id);
     }
 
     private File buildFilePath(String hashedPath, String originalId) {
@@ -217,19 +236,33 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
 
     @Override
     public void delete(String resourceId) throws IOException {
-        File baseFile = resolveFileForId(resourceId, false);
-        if (baseFile.exists() && baseFile.isFile()) {
-            boolean deleted = baseFile.delete();
-            if (!deleted) {
-                throw new IOException("Unable to delete file: " + baseFile);
+        File baseFile = resolveFileForId(resourceId);
+        Files.deleteIfExists(baseFile.toPath());
+        Files.deleteIfExists(LinebreakIndexFile.getIndexFile(baseFile).toPath());
+        // Opportunistic cleanup of empty parent directories
+        deleteEmptyDirectories(baseFile.getParentFile());
+    }
+
+    // This method is safe even under extreme concurrency.
+    // The creation of directories/files also uses atomic operations and handles potential edge cases introduced
+    // by concurrent cleanup and creation, so no concurrency issues to expect.
+    private void deleteEmptyDirectories(File leafDir) {
+        Path baseDirPath = baseDirectory.toPath().toAbsolutePath().normalize();
+        Path currentDirPath = leafDir.toPath().toAbsolutePath().normalize();
+
+        while (currentDirPath != null && !currentDirPath.equals(baseDirPath)) {
+            try {
+                Files.delete(currentDirPath); // succeeds only if empty
+            } catch (DirectoryNotEmptyException e) {
+                break; // directory still in use: stop
+            } catch (NoSuchFileException e) {
+                // already gone (that was our intent anyway), keep walking up
+            } catch (IOException e) {
+                logger.debug("Aborting directory cleanup for {} because of unexpected exception: {}", currentDirPath, e.toString());
+                break;
             }
-        }
-        File indexFile = LinebreakIndexFile.getIndexFile(baseFile);
-        if (indexFile.exists() && indexFile.isFile()) {
-            boolean deleted = indexFile.delete();
-            if (!deleted) {
-                throw new IOException("Unable to delete file: " + indexFile);
-            }
+            // move up to parent directory
+            currentDirPath = currentDirPath.getParent();
         }
     }
 }

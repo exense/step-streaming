@@ -1,9 +1,6 @@
 package step.streaming.server;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.*;
 import org.junit.function.ThrowingRunnable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,7 +13,9 @@ import step.streaming.server.test.TestingStorageBackend;
 import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.*;
 
 import java.io.*;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
@@ -221,6 +220,9 @@ public class DefaultStreamingResourceManagerTest {
         assertNull(storageBackend.getLinebreakIndex(id));
         // non-existing resources return 0 by design in storage (but file is actually deleted)
         assertEquals(0, storageBackend.getCurrentSize(id));
+        File f = storageBackend.getTempDirectory();
+        // storage directory should be empty again after deletion of last resource
+        Assert.assertEquals(0, Objects.requireNonNull(f.listFiles()).length);
     }
 
     private String uploadAndCheckSizeAndLinebreaks(String fileName, long expectedSize, long expectedNumberOfLines) throws IOException {
