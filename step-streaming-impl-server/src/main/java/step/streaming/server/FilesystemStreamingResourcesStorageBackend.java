@@ -13,7 +13,6 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Objects;
-import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -124,7 +123,7 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
     }
 
     @Override
-    public void writeChunk(String resourceId, InputStream input, Consumer<Long> fileSizeConsumer, Consumer<Long> linebreakCountConsumer) throws IOException {
+    public void writeChunk(String resourceId, InputStream input, ThrowingConsumer<Long> fileSizeConsumer, ThrowingConsumer<Long> linebreakCountConsumer) throws IOException {
         // In the current implementation, uploads are one-shot, i.e. the file is uploaded in a single chunk. However,
         // it could also be a resuming/appending write, hence we account for that by "resuming" from the current file size (0 if non-existent)
         File file = resolveFileForId(resourceId);
@@ -162,11 +161,6 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
         ) {
             long written = input.transferTo(checkpointingOut);
             logger.debug("Wrote {} bytes to file {}", written, file);
-        } catch (IOException e) {
-            logger.error("Failed to write chunk for resource {}", resourceId, e);
-            // Implementation note: Some uploads (e.g. Websockets) DO NOT necessarily throw an Exception on the InputStream!
-            // Instead, the transfer will seemingly complete correctly, but the session is then closed abnormally.
-            throw e;
         } finally {
             if (indexFile != null) {
                 indexFile.close();

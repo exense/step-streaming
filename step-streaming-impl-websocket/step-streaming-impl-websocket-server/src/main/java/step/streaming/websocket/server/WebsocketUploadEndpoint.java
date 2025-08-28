@@ -47,10 +47,14 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     @Override
     public void onOpen(Session session, EndpointConfig config) {
         this.session = session;
-        Optional.ofNullable(sessionsHandler).ifPresent(handler -> handler.register(session));
         session.getRequestParameterMap()
                 .getOrDefault(StreamingResourceUploadContext.PARAMETER_NAME, List.of())
                 .stream().findFirst().ifPresent(ctx -> uploadContextId = ctx);
+        if (manager.isUploadContextRequired() && uploadContextId == null) {
+            closeSession(session, new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, "Missing parameter " + StreamingResourceUploadContext.PARAMETER_NAME));
+            return;
+        }
+        Optional.ofNullable(sessionsHandler).ifPresent(handler -> handler.register(session));
         state = State.EXPECTING_METADATA;
         session.addMessageHandler(String.class, this::onMessage);
         session.addMessageHandler(InputStream.class, this::onData);
@@ -113,8 +117,8 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             state = State.EXPECTING_FINISHEDMESSAGE;
             uploadAcknowledgedMessage = new UploadAcknowledgedMessage(bytesWritten, status.getNumberOfLines(), checksum);
         } catch (IOException e) {
-            logger.error("Error while uploading data", e);
-            throw new RuntimeException(e);
+            logger.error("Error while uploading data, closing session abnormally", e);
+            closeSession(session, new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, e.getMessage()));
         }
     }
 
@@ -134,7 +138,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 manager.markFailed(resourceId);
             }
         } else {
-            logger.warn("Incomplete session (no resource ID) closed: session={}, state={}", session.getId(), state);
+            logger.warn("Incomplete session (no resource ID) closed: session={}, state={}, reason={}", session.getId(), state, closeReason);
         }
     }
 

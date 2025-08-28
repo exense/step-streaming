@@ -9,10 +9,15 @@ import java.io.InputStream;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
-/** Manager coordinating server-side operations related to streaming resources.
+/**
+ * Manager coordinating server-side operations related to streaming resources.
  * TODO: document.
  */
 public interface StreamingResourceManager {
+
+    default boolean isUploadContextRequired() {
+        return false;
+    }
 
     String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) throws IOException;
 
@@ -35,5 +40,6 @@ public interface StreamingResourceManager {
     StreamingResourceReference getReferenceFor(String resourceId);
 
     Stream<Long> getLinebreakPositions(String resourceId, long startingLinebreakIndex, long count) throws IOException;
+
     Stream<String> getLines(String resourceId, long startingLineIndex, long count) throws IOException;
 }

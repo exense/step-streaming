@@ -1,9 +1,11 @@
 package step.streaming.data;
 
+import step.streaming.util.ExceptionsUtil;
+import step.streaming.util.ThrowingConsumer;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Objects;
-import java.util.function.Consumer;
 
 /**
  * An OutputStream wrapper that periodically flushes and emits checkpoint notifications based on a configurable interval.
@@ -21,9 +23,12 @@ public class CheckpointingOutputStream extends OutputStream {
 
     private final OutputStream delegate;
     private final long flushIntervalMillis;
-    private final Consumer<Long> flushListener;
+    private final ThrowingConsumer<Long> flushListener;
     private long lastFlushTime = 0;
     private long totalBytesWritten = 0;
+    // by setting the initial value to true, we're forcing a listener notification on close even if we never wrote
+    // anything (i.e., if size remains 0). This is on purpose.
+    private boolean dirty = true;
 
     /**
      * Constructs a new CheckpointingOutputStream.
@@ -34,7 +39,7 @@ public class CheckpointingOutputStream extends OutputStream {
      * @throws NullPointerException     if {@code delegate} is null
      * @throws IllegalArgumentException if {@code flushIntervalMillis} is not positive
      */
-    public CheckpointingOutputStream(OutputStream delegate, long flushIntervalMillis, Consumer<Long> flushListener) {
+    public CheckpointingOutputStream(OutputStream delegate, long flushIntervalMillis, ThrowingConsumer<Long> flushListener) {
         this.delegate = Objects.requireNonNull(delegate);
         if (flushIntervalMillis <= 0) {
             throw new IllegalArgumentException("flushIntervalMillis must be greater than zero");
@@ -50,6 +55,7 @@ public class CheckpointingOutputStream extends OutputStream {
     public void write(int b) throws IOException {
         delegate.write(b);
         totalBytesWritten++;
+        dirty = true;
         maybeFlush();
     }
 
@@ -60,6 +66,7 @@ public class CheckpointingOutputStream extends OutputStream {
     public void write(byte[] b, int off, int len) throws IOException {
         delegate.write(b, off, len);
         totalBytesWritten += len;
+        dirty = true;
         maybeFlush();
     }
 
@@ -68,11 +75,18 @@ public class CheckpointingOutputStream extends OutputStream {
      */
     @Override
     public void flush() throws IOException {
-        delegate.flush();
-        if (flushListener != null) {
-            flushListener.accept(totalBytesWritten);
+        if (dirty) {
+            dirty = false;
+            delegate.flush();
+            if (flushListener != null) {
+                try {
+                    flushListener.accept(totalBytesWritten);
+                } catch (Exception e) {
+                    throw ExceptionsUtil.as(e, IOException.class);
+                }
+            }
+            lastFlushTime = System.currentTimeMillis();
         }
-        lastFlushTime = System.currentTimeMillis();
     }
 
     private boolean closed = false;

@@ -2,19 +2,20 @@ package step.streaming.websocket.server.upload;
 
 import jakarta.websocket.server.ServerEndpointConfig;
 import org.junit.After;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.client.download.WebsocketDownload;
 import step.streaming.client.download.WebsocketDownloadClient;
+import step.streaming.client.upload.StreamingUpload;
 import step.streaming.client.upload.StreamingUploadSession;
+import step.streaming.client.upload.StreamingUploads;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
+import step.streaming.common.StreamingResourceUploadContexts;
 import step.streaming.data.*;
-import step.streaming.server.DefaultStreamingResourceManager;
 import step.streaming.server.URITemplateBasedReferenceProducer;
 import step.streaming.server.test.InMemoryCatalogBackend;
 import step.streaming.server.test.TestingStorageBackend;
@@ -25,6 +26,7 @@ import step.streaming.websocket.server.DefaultWebsocketServerEndpointSessionsHan
 import step.streaming.websocket.server.WebsocketDownloadEndpoint;
 import step.streaming.websocket.server.WebsocketServerEndpointSessionsHandler;
 import step.streaming.websocket.server.WebsocketUploadEndpoint;
+import step.streaming.websocket.test.TestingResourceManager;
 import step.streaming.websocket.test.TestingWebsocketServer;
 import step.streaming.websocket.test.TricklingDelegatingInputStream;
 import step.streaming.websocket.test.TricklingRandomBytesInputStream;
@@ -39,6 +41,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.Assert.*;
 import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.APPLICATION_OCTET_STREAM;
 import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN;
 
@@ -46,7 +49,7 @@ public class StreamingResourceEndpointTests {
     private static final Logger logger = LoggerFactory.getLogger("UNITTEST");
     private TestingStorageBackend storageBackend;
     private InMemoryCatalogBackend catalogBackend;
-    private DefaultStreamingResourceManager manager;
+    private TestingResourceManager manager;
     private WebsocketServerEndpointSessionsHandler sessionsHandler;
     private URITemplateBasedReferenceProducer referenceProducer;
     private TestingWebsocketServer server;
@@ -63,9 +66,9 @@ public class StreamingResourceEndpointTests {
         storageBackend = new TestingStorageBackend(1000L, false);
         catalogBackend = new InMemoryCatalogBackend();
         referenceProducer = new URITemplateBasedReferenceProducer(null, WebsocketDownloadEndpoint.DEFAULT_ENDPOINT_URL, WebsocketDownloadEndpoint.DEFAULT_PARAMETER_NAME);
-        manager = new DefaultStreamingResourceManager(catalogBackend, storageBackend,
+        manager = new TestingResourceManager(catalogBackend, storageBackend,
                 referenceProducer,
-                null
+                new StreamingResourceUploadContexts()
         );
         server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
         referenceProducer.setBaseUri(server.getURI());
@@ -124,10 +127,10 @@ public class StreamingResourceEndpointTests {
         //uploadClient.performUpload(new FailingInputStream(data, 30, true));
         uploadClient.performUpload(data);
 
-        Assert.assertEquals(DATA_SIZE, upload.getCurrentStatus().getCurrentSize());
-        Assert.assertEquals(StreamingResourceTransferStatus.COMPLETED, upload.getCurrentStatus().getTransferStatus());
+        assertEquals(DATA_SIZE, upload.getCurrentStatus().getCurrentSize());
+        assertEquals(StreamingResourceTransferStatus.COMPLETED, upload.getCurrentStatus().getTransferStatus());
 
-        Assert.assertEquals(DATA_SIZE, downloadClient.requestChunkTransfer(0, DATA_SIZE, OutputStream.nullOutputStream()).get().longValue());
+        assertEquals(DATA_SIZE, downloadClient.requestChunkTransfer(0, DATA_SIZE, OutputStream.nullOutputStream()).get().longValue());
         downloadClient.close();
     }
 
@@ -202,19 +205,19 @@ public class StreamingResourceEndpointTests {
             }
         });
         downloadThread.start();
-        Assert.assertEquals(DATA_SIZE, randomBytesProducer.produce());
-        Assert.assertEquals(DATA_SIZE, randomBytesProducer.file.length());
+        assertEquals(DATA_SIZE, randomBytesProducer.produce());
+        assertEquals(DATA_SIZE, randomBytesProducer.file.length());
         upload.signalEndOfInput();
         logger.info("UPLOAD FINAL STATUS: {}", upload.getFinalStatusFuture().get());
         upload.close(); // optional
         downloadThread.join();
-        Assert.assertEquals(randomBytesProducer.checksum, downloadChecksum.get());
+        assertEquals(randomBytesProducer.checksum, downloadChecksum.get());
         // do another transfer, this time of the finished file
         MD5CalculatingOutputStream md5Out = new MD5CalculatingOutputStream(OutputStream.nullOutputStream());
         long again = download.getInputStream().transferTo(md5Out);
-        Assert.assertEquals(DATA_SIZE, again);
+        assertEquals(DATA_SIZE, again);
         md5Out.close();
-        Assert.assertEquals(randomBytesProducer.checksum, md5Out.getChecksum());
+        assertEquals(randomBytesProducer.checksum, md5Out.getChecksum());
         download.close();
     }
 
@@ -247,25 +250,25 @@ public class StreamingResourceEndpointTests {
             }
         });
         downloadThread.start();
-        Assert.assertEquals(INPUT_DATA_SIZE, isoBytesProducer.produce());
-        Assert.assertEquals(INPUT_DATA_SIZE, isoBytesProducer.file.length());
+        assertEquals(INPUT_DATA_SIZE, isoBytesProducer.produce());
+        assertEquals(INPUT_DATA_SIZE, isoBytesProducer.file.length());
         upload.signalEndOfInput();
         StreamingResourceStatus finalUploadStatus = upload.getFinalStatusFuture().join();
         logger.info("UPLOAD FINAL STATUS: {}", finalUploadStatus);
-        Assert.assertEquals(OUTPUT_LINES, finalUploadStatus.getNumberOfLines());
-        Assert.assertEquals(OUTPUT_DATA_SIZE, finalUploadStatus.getCurrentSize());
-        Assert.assertEquals(StreamingResourceTransferStatus.COMPLETED, finalUploadStatus.getTransferStatus());
+        assertEquals(OUTPUT_LINES, finalUploadStatus.getNumberOfLines());
+        assertEquals(OUTPUT_DATA_SIZE, finalUploadStatus.getCurrentSize());
+        assertEquals(StreamingResourceTransferStatus.COMPLETED, finalUploadStatus.getTransferStatus());
         upload.close(); // optional
         downloadThread.join();
-        Assert.assertEquals(FAUST_ISO8859_CHECKSUM, isoBytesProducer.checksum);
-        Assert.assertEquals(FAUST_UTF8_CHECKSUM, downloadChecksum.get());
+        assertEquals(FAUST_ISO8859_CHECKSUM, isoBytesProducer.checksum);
+        assertEquals(FAUST_UTF8_CHECKSUM, downloadChecksum.get());
 
         // do another transfer, this time of the finished file
         MD5CalculatingOutputStream md5Out = new MD5CalculatingOutputStream(OutputStream.nullOutputStream());
         long again = download.getInputStream().transferTo(md5Out);
-        Assert.assertEquals(OUTPUT_DATA_SIZE, again);
+        assertEquals(OUTPUT_DATA_SIZE, again);
         md5Out.close();
-        Assert.assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
+        assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
         download.close();
     }
 
@@ -286,19 +289,12 @@ public class StreamingResourceEndpointTests {
         producerThread.start();
         Thread.sleep(2000);
         // interrupt upload by closing session, but without setting it to completed
-        try {
-            upload.close();
-            Assert.fail("Expected exception to be thrown");
-        } catch (IOException e) {
-            Assert.assertTrue(e.getMessage().contains("Upload session was closed before input was signalled to be complete"));
-        }
-        try {
-            upload.getFinalStatusFuture().join();
-            Assert.fail("Expected exception to be thrown");
-        } catch (Exception e) {
-            Assert.assertTrue(e.getMessage().contains("Upload session was closed before input was signalled to be complete"));
-        }
+        IOException io = assertThrows(IOException.class, upload::close);
+        assertTrue(io.getMessage().contains("Upload session was closed before input was signalled to be complete"));
+        Exception e = assertThrows(Exception.class, () -> upload.getFinalStatusFuture().join());
+        assertTrue(e.getMessage().contains("Upload session was closed before input was signalled to be complete"));
     }
+
     @Test
     public void testLineBasedDownload() throws Exception {
         File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
@@ -359,7 +355,7 @@ public class StreamingResourceEndpointTests {
         downloadClient.close();
 
         // we retrieved the data using line-based access, but this should be exactly equivalent to the raw file
-        Assert.assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
+        assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
     }
 
     @Test
@@ -368,7 +364,6 @@ public class StreamingResourceEndpointTests {
 
         testFailedDownloadWithInput(uploadProvider, "Failing");
         testFailedDownloadWithInput(uploadProvider, "Failing\n");
-
     }
 
     private static void testFailedDownloadWithInput(WebsocketUploadProvider uploadProvider, String input) throws IOException, InterruptedException {
@@ -390,9 +385,43 @@ public class StreamingResourceEndpointTests {
                 in.transferTo(data);
             }
             // We expect numberOfLines==1, regardless of whether input was terminated by LB or not
-            Assert.assertEquals(new StreamingResourceStatus(StreamingResourceTransferStatus.FAILED, input.length(), 1L), download.getCurrentStatus());
+            assertEquals(new StreamingResourceStatus(StreamingResourceTransferStatus.FAILED, input.length(), 1L), download.getCurrentStatus());
             String downloaded = data.toString();
-            Assert.assertEquals(input, downloaded);
+            assertEquals(input, downloaded);
+        } finally {
+            Files.deleteIfExists(dataFile.toPath());
+        }
+    }
+
+
+    @Test
+    public void testUploadErrorContextRequired() throws Exception {
+        File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
+        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
+        // ask manager to require context (but we don't provide one)
+        manager.uploadContextRequired = true;
+        try {
+            IOException e = assertThrows(IOException.class, () -> uploadProvider.startLiveTextFileUpload(dataFile, new StreamingResourceMetadata("dummy.txt", TEXT_PLAIN, true), StandardCharsets.UTF_8));
+            assertEquals("WebSocket closed by server: CloseReason[1008,Missing parameter streamingUploadContextId]", e.getMessage());
+        } finally {
+            Files.deleteIfExists(dataFile.toPath());
+        }
+    }
+
+    @Test
+    public void testSizeRestrictionCallback() throws Exception {
+        File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
+        StreamingUploads uploads = new StreamingUploads(new WebsocketUploadProvider(uploadUri));
+        try {
+            StreamingUpload upload = uploads.startTextFileUpload(dataFile);
+            manager.sizeChecker = value -> {
+                if (value > 10) {
+                    throw new IOException("Size " + value + " exceeds threshold 10");
+                }
+            };
+            Files.writeString(dataFile.toPath(), "This is the file content.");
+            Exception e = assertThrows(Exception.class, upload::complete);
+            assertTrue(e.getMessage().contains("Websocket session closed, reason=CloseReason[1008,Size 25 exceeds threshold 10], but upload was not completed"));
         } finally {
             Files.deleteIfExists(dataFile.toPath());
         }

@@ -1,8 +1,9 @@
 package step.streaming.server;
 
+import step.streaming.util.ThrowingConsumer;
+
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.function.Consumer;
 
 /**
  * Storage backend used on the server side.
@@ -45,7 +46,7 @@ public interface StreamingResourcesStorageBackend {
      * @throws IOException if the write fails
      * @see StreamingResourcesStorageBackend#prepareForWrite(String, boolean)
      */
-    void writeChunk(String resourceId, InputStream input, Consumer<Long> fileSizeConsumer, Consumer<Long> linebreakCountConsumer) throws IOException;
+    void writeChunk(String resourceId, InputStream input, ThrowingConsumer<Long> fileSizeConsumer, ThrowingConsumer<Long> linebreakCountConsumer) throws IOException;
 
     /**
      * Opens an input stream to read from a resource in a specific byte range.

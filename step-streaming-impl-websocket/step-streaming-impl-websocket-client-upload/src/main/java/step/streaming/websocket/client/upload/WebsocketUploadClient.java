@@ -14,6 +14,7 @@ import step.streaming.websocket.protocol.upload.*;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.channels.ClosedChannelException;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -42,6 +43,8 @@ public class WebsocketUploadClient {
     private final CompletableFuture<UploadAcknowledgedMessage> uploadAcknowledgedFuture = new CompletableFuture<>();
     private State state;
     private Remote endpoint;
+    // captured, and used in exception handling for clearer messages
+    private volatile CloseReason closeReason;
     // this is just a (very generous) timeout limit for awaiting responses/events; might be configurable in the future
     private final long timeoutSeconds = 60;
 
@@ -85,11 +88,30 @@ public class WebsocketUploadClient {
         }
     }
 
+    // Sends text over the websocket and emits more understandable exceptions in case the session was closed
+    // (e.g. by the server refusing to handle an upload because of quota checks)
+    private void sendText(String text) throws IOException {
+        try {
+            jettySession.getBasicRemote().sendText(text);
+        } catch (IOException e) {
+            if (e instanceof ClosedChannelException || e.getCause() instanceof ClosedChannelException) {
+                if (closeReason != null) {
+                    throw new IOException(
+                            "WebSocket closed by server: " + closeReason, e
+                    );
+                } else {
+                    throw new IOException("WebSocket channel closed unexpectedly", e);
+                }
+            }
+            throw e; // some other IOException
+        }
+    }
+
     private void sendUploadRequestAndAwaitReply() throws IOException {
         StartUploadMessage request = new StartUploadMessage(uploadSession.getMetadata());
         logger.info("{} Starting upload, metadata={}", this, request.metadata);
         state = State.EXPECTING_REFERENCE;
-        jettySession.getBasicRemote().sendText(request.toString());
+        sendText(request.toString());
         try {
             // response is usually immediate, but allow for a little more time (though not unlimited)
             StreamingResourceReference reference = referenceFuture.get(timeoutSeconds, TimeUnit.SECONDS);
@@ -135,7 +157,7 @@ public class WebsocketUploadClient {
             outputStream.close();
             String clientChecksum = outputStream.getChecksum();
             logger.debug("{} Data sent: {} bytes, checksum={}", this, bytesSent, clientChecksum);
-            jettySession.getBasicRemote().sendText(new FinishUploadMessage(clientChecksum).toString());
+            sendText(new FinishUploadMessage(clientChecksum).toString());
             state = State.EXPECTING_ACKNOWLEDGE;
             UploadAcknowledgedMessage acknowledgedMessage = uploadAcknowledgedFuture.get(timeoutSeconds, TimeUnit.SECONDS);
             String serverChecksum = acknowledgedMessage.checksum;
@@ -175,6 +197,7 @@ public class WebsocketUploadClient {
     }
 
     private void onClose(CloseReason closeReason) {
+        this.closeReason = closeReason;
         if (state == State.FINALIZED) {
             // normal closure
             logger.debug("{} Session closing, reason={}", this, closeReason);
@@ -184,7 +207,7 @@ public class WebsocketUploadClient {
         } else {
             logger.warn("{} Unexpected closure of session, reason={}, currently in state {}", this, closeReason, state);
             // terminate open futures if any
-            IllegalStateException exception = new IllegalStateException("Client closed, reason=" + closeReason + ", but upload was not completed");
+            var exception = new IOException("Websocket session closed, reason=" + closeReason + ", but upload was not completed");
             if (!referenceFuture.isDone()) {
                 referenceFuture.completeExceptionally(exception);
             }

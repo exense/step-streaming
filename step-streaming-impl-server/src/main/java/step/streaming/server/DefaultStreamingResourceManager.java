@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.*;
 import step.streaming.server.data.LineSlicingIterator;
+import step.streaming.util.ThrowingConsumer;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,7 +12,6 @@ import java.io.UncheckedIOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -70,12 +70,26 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
         return resourceId;
     }
 
+    /**
+     * Invoked during the upload of a resource whenever a change in size is published.
+     * This is useful for enforcing quotas etc.
+     * The default implementation does nothing; override in subclasses if needed.
+     *
+     * @param resourceId  the affected resource
+     * @param currentSize the last known size of the resource
+     * @throws IOException to signal an error, e.g. quota exceeded or similar. This will effectively abort the upload and set it as FAILED.
+     */
+    protected void onSizeChanged(String resourceId, long currentSize) throws IOException {
+
+    }
+
     @Override
     public long writeChunk(String resourceId, InputStream input) throws IOException {
         try {
             AtomicReference<Long> linebreakCount = new AtomicReference<>();
-            Consumer<Long> linebreakCountListener = linebreakCount::set;
-            Consumer<Long> sizeListener = updatedSize -> {
+            ThrowingConsumer<Long> linebreakCountListener = linebreakCount::set;
+            ThrowingConsumer<Long> sizeListener = updatedSize -> {
+                onSizeChanged(resourceId, updatedSize);
                 StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(
                         StreamingResourceTransferStatus.IN_PROGRESS, updatedSize, linebreakCount.get()
                 );

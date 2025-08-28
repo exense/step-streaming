@@ -1,6 +1,8 @@
 package step.streaming.websocket;
 
 import jakarta.websocket.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
@@ -32,6 +34,8 @@ import java.nio.channels.ClosedChannelException;
 
 public abstract class HalfCloseCompatibleEndpoint extends Endpoint {
 
+    private static final Logger logger = LoggerFactory.getLogger(HalfCloseCompatibleEndpoint.class);
+
     private volatile CloseReason closeReason;
     private volatile boolean closed = false;
 
@@ -42,14 +46,17 @@ public abstract class HalfCloseCompatibleEndpoint extends Endpoint {
      *
      * @param session     session to close
      * @param closeReason close reason
-     * @throws IOException on error
-     * @see Session#close(CloseReason) 
+     * @see Session#close(CloseReason)
      */
-    public final void closeSession(Session session, CloseReason closeReason) throws IOException {
+    public final void closeSession(Session session, CloseReason closeReason) {
         // this might be invoked multiple times (e.g. on errors); only react the first time
         if (this.closeReason == null) {
             this.closeReason = closeReason;
-            session.close(closeReason);
+            try {
+                session.close(closeReason);
+            } catch (IOException e) {
+                logger.error("Error while closing Websocket session {} ", session, e);
+            }
         }
     }
 
