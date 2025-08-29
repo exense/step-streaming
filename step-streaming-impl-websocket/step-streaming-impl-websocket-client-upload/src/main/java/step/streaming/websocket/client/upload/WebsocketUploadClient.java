@@ -3,6 +3,7 @@ package step.streaming.websocket.client.upload;
 import jakarta.websocket.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceReference;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
@@ -207,7 +208,11 @@ public class WebsocketUploadClient {
         } else {
             logger.warn("{} Unexpected closure of session, reason={}, currently in state {}", this, closeReason, state);
             // terminate open futures if any
-            var exception = new IOException("Websocket session closed, reason=" + closeReason + ", but upload was not completed");
+            Exception exception = new IOException("Websocket session closed, reason=" + closeReason + ", but upload was not completed");
+            // special handling of particular exception
+            if (closeReason.getReasonPhrase().startsWith("QuotaExceededException: ")) {
+                exception = new QuotaExceededException(closeReason.getReasonPhrase().substring(24));
+            }
             if (!referenceFuture.isDone()) {
                 referenceFuture.completeExceptionally(exception);
             }

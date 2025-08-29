@@ -1,13 +1,12 @@
 package step.streaming.websocket.server.upload;
 
 import jakarta.websocket.server.ServerEndpointConfig;
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.client.download.WebsocketDownload;
 import step.streaming.client.download.WebsocketDownloadClient;
+import step.streaming.common.QuotaExceededException;
 import step.streaming.client.upload.StreamingUpload;
 import step.streaming.client.upload.StreamingUploadSession;
 import step.streaming.client.upload.StreamingUploads;
@@ -436,12 +435,12 @@ public class StreamingResourceEndpointTests {
             StreamingUpload upload = uploads.startTextFileUpload(dataFile);
             manager.sizeChecker = value -> {
                 if (value > 10) {
-                    throw new IOException("Size " + value + " exceeds threshold 10");
+                    throw new QuotaExceededException("Size " + value + " exceeds threshold 10");
                 }
             };
             Files.writeString(dataFile.toPath(), "This is the file content.");
-            Exception e = assertThrows(Exception.class, upload::complete);
-            assertTrue(e.getMessage().contains("Websocket session closed, reason=CloseReason[1008,Size 25 exceeds threshold 10], but upload was not completed"));
+            QuotaExceededException e = assertThrows(QuotaExceededException.class, upload::complete);
+            assertEquals("Size 25 exceeds threshold 10", e.getMessage());
         } finally {
             Files.deleteIfExists(dataFile.toPath());
         }

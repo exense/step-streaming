@@ -1,5 +1,6 @@
 package step.streaming.client.upload;
 
+import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceStatus;
 
 import java.time.Duration;
@@ -89,9 +90,17 @@ public class StreamingUpload {
      *
      * @see #complete(Duration)
      */
-    public StreamingResourceStatus complete() throws ExecutionException, InterruptedException {
+    public StreamingResourceStatus complete() throws ExecutionException, InterruptedException, QuotaExceededException {
         session.signalEndOfInput();
-        return session.getFinalStatusFuture().get();
+        try {
+            return session.getFinalStatusFuture().get();
+        } catch (ExecutionException e) {
+            // special case: unwrap QuotaExceededException
+            if (e.getCause() instanceof QuotaExceededException) {
+                throw (QuotaExceededException) e.getCause();
+            }
+            throw e;
+        }
     }
 
     /**

@@ -117,8 +117,13 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             state = State.EXPECTING_FINISHEDMESSAGE;
             uploadAcknowledgedMessage = new UploadAcknowledgedMessage(bytesWritten, status.getNumberOfLines(), checksum);
         } catch (IOException e) {
+            String message = e.getMessage();
+            if (e instanceof QuotaExceededException) {
+                // special case to clearly signal specific exception, also handled specially on client side
+                message = String.format("QuotaExceededException: %s", message);
+            }
             logger.error("Error while uploading data, closing session abnormally", e);
-            closeSession(session, new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, e.getMessage()));
+            closeSession(session, new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, message));
         }
     }
 
