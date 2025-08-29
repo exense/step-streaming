@@ -46,14 +46,11 @@ import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.AP
 import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN;
 
 /* Important note:
-   I have absolutely no clue why this is happening, but on the build server, these Unit tests
-   very often seem to run the teardown (@After) method *while* a test is still running. If
-   this happens, the assertions in the test obviously fail. I cannot reproduce this locally,
-   it only seems to happen on the build server for totally unclear reasons (and only on this
-   test here -- again, no clue why, maybe I'm doing something wrong). Anyway, the (hopefully working)
-   solution is to have the teardown method wait on an explicit "test ended" signal, so
-   all test methods in here MUST end with the line
-           testDone.complete(null);
+On the build server (only), something extremely weird was happening when the setup and teardown methods
+were annotated with @Before and @After: the teardown method would be run BEFORE the actual test methods
+were completed, causing failing tests. I have no clue what the hell was happening there, and I couldn't
+reproduce it locally. The attempt to fix it is to have each test explicitly call the setup and teardown
+methods. It's cumbersome, but hopefully fixes the situation...
  */
 public class StreamingResourceEndpointTests {
     private static final Logger logger = LoggerFactory.getLogger("UNITTEST");
@@ -64,13 +61,11 @@ public class StreamingResourceEndpointTests {
     private URITemplateBasedReferenceProducer referenceProducer;
     private TestingWebsocketServer server;
     private URI uploadUri;
-    private CompletableFuture<Void> testDone;
 
     private static final String FAUST_ISO8859_CHECKSUM = "317c7a8df8c817c80bf079cfcbbc6686";
     private static final String FAUST_UTF8_CHECKSUM = "540441d13a31641d7775d91c46c94511";
 
 
-    @Before
     public void setUp() throws Exception {
         logger.info("setUp() starting");
         sessionsHandler = new DefaultWebsocketServerEndpointSessionsHandler();
@@ -84,14 +79,11 @@ public class StreamingResourceEndpointTests {
         server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
         referenceProducer.setBaseUri(server.getURI());
         uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
-        testDone = new CompletableFuture<>();
         logger.info("setUp() done, server=" + server);
     }
 
-    @After
     public void tearDown() throws Exception {
         logger.info("tearDown() starting, server=" + server);
-        testDone.get(30, TimeUnit.SECONDS);
         Thread.sleep(100);
         sessionsHandler.shutdown();
         server.stop();
@@ -123,6 +115,7 @@ public class StreamingResourceEndpointTests {
 
     @Test
     public void testLowLevelUploadFollowedByOneShotDownload() throws Exception {
+        setUp();
         long DATA_SIZE = 500_000L;
         StreamingResourceMetadata metadata = new StreamingResourceMetadata("test.txt", TEXT_PLAIN, true);
         WebsocketUploadSession upload = new WebsocketUploadSession(metadata, new EndOfInputSignal());
@@ -145,7 +138,7 @@ public class StreamingResourceEndpointTests {
 
         assertEquals(DATA_SIZE, downloadClient.requestChunkTransfer(0, DATA_SIZE, OutputStream.nullOutputStream()).get().longValue());
         downloadClient.close();
-        testDone.complete(null);
+        tearDown();
     }
 
     private static class RandomBytesProducer {
@@ -197,6 +190,7 @@ public class StreamingResourceEndpointTests {
 
     @Test
     public void testHighLevelUploadWithSimultaneousDownloadsRandomData() throws Exception {
+        setUp();
         long DATA_SIZE = 200_000_000L;
         RandomBytesProducer randomBytesProducer = new RandomBytesProducer(DATA_SIZE, 5, TimeUnit.SECONDS);
 
@@ -233,11 +227,12 @@ public class StreamingResourceEndpointTests {
         md5Out.close();
         assertEquals(randomBytesProducer.checksum, md5Out.getChecksum());
         download.close();
-        testDone.complete(null);
+        tearDown();
     }
 
     @Test
     public void testHighLevelUploadWithSimultaneousDownloadsWithTextConversion() throws Exception {
+        setUp();
         URL url = Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt");
         File sourceFile = new File(url.toURI());
         long INPUT_DATA_SIZE = 10171; // in ISO-8859-1 format
@@ -285,11 +280,12 @@ public class StreamingResourceEndpointTests {
         md5Out.close();
         assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
         download.close();
-        testDone.complete(null);
+        tearDown();
     }
 
     @Test
     public void testErrorScenarios() throws Exception {
+        setUp();
         File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
         FileBytesProducer uploadProducer = new FileBytesProducer(sourceFile, 15, TimeUnit.SECONDS);
 
@@ -309,11 +305,12 @@ public class StreamingResourceEndpointTests {
         assertTrue(io.getMessage().contains("Upload session was closed before input was signalled to be complete"));
         Exception e = assertThrows(Exception.class, () -> upload.getFinalStatusFuture().join());
         assertTrue(e.getMessage().contains("Upload session was closed before input was signalled to be complete"));
-        testDone.complete(null);
+        tearDown();
     }
 
     @Test
     public void testLineBasedDownload() throws Exception {
+        setUp();
         File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
         FileBytesProducer uploadProducer = new FileBytesProducer(sourceFile, 15, TimeUnit.SECONDS);
 
@@ -373,16 +370,17 @@ public class StreamingResourceEndpointTests {
 
         // we retrieved the data using line-based access, but this should be exactly equivalent to the raw file
         assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
-        testDone.complete(null);
+        tearDown();
     }
 
     @Test
     public void testFailedDownload() throws Exception {
+        setUp();
         WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
 
         testFailedDownloadWithInput(uploadProvider, "Failing");
         testFailedDownloadWithInput(uploadProvider, "Failing\n");
-        testDone.complete(null);
+        tearDown();
     }
 
     private static void testFailedDownloadWithInput(WebsocketUploadProvider uploadProvider, String input) throws IOException, InterruptedException {
@@ -415,6 +413,7 @@ public class StreamingResourceEndpointTests {
 
     @Test
     public void testUploadErrorContextRequired() throws Exception {
+        setUp();
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
         WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
         // ask manager to require context (but we don't provide one)
@@ -425,11 +424,12 @@ public class StreamingResourceEndpointTests {
         } finally {
             Files.deleteIfExists(dataFile.toPath());
         }
-        testDone.complete(null);
+        tearDown();
     }
 
     @Test
     public void testSizeRestrictionCallback() throws Exception {
+        setUp();
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
         StreamingUploads uploads = new StreamingUploads(new WebsocketUploadProvider(uploadUri));
         try {
@@ -445,6 +445,6 @@ public class StreamingResourceEndpointTests {
         } finally {
             Files.deleteIfExists(dataFile.toPath());
         }
-        testDone.complete(null);
+        tearDown();
     }
 }
