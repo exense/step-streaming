@@ -45,6 +45,16 @@ import static org.junit.Assert.*;
 import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.APPLICATION_OCTET_STREAM;
 import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN;
 
+/* Important note:
+   I have absolutely no clue why this is happening, but on the build server, these Unit tests
+   very often seem to run the teardown (@After) method *while* a test is still running. If
+   this happens, the assertions in the test obviously fail. I cannot reproduce this locally,
+   it only seems to happen on the build server for totally unclear reasons (and only on this
+   test here -- again, no clue why, maybe I'm doing something wrong). Anyway, the (hopefully working)
+   solution is to have the teardown method wait on an explicit "test ended" signal, so
+   all test methods in here MUST end with the line
+           testDone.complete(null);
+ */
 public class StreamingResourceEndpointTests {
     private static final Logger logger = LoggerFactory.getLogger("UNITTEST");
     private TestingStorageBackend storageBackend;
@@ -54,6 +64,7 @@ public class StreamingResourceEndpointTests {
     private URITemplateBasedReferenceProducer referenceProducer;
     private TestingWebsocketServer server;
     private URI uploadUri;
+    private CompletableFuture<Void> testDone;
 
     private static final String FAUST_ISO8859_CHECKSUM = "317c7a8df8c817c80bf079cfcbbc6686";
     private static final String FAUST_UTF8_CHECKSUM = "540441d13a31641d7775d91c46c94511";
@@ -73,12 +84,14 @@ public class StreamingResourceEndpointTests {
         server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
         referenceProducer.setBaseUri(server.getURI());
         uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
+        testDone = new CompletableFuture<>();
         logger.info("setUp() done, server=" + server);
     }
 
     @After
     public void tearDown() throws Exception {
         logger.info("tearDown() starting, server=" + server);
+        testDone.get(30, TimeUnit.SECONDS);
         Thread.sleep(100);
         sessionsHandler.shutdown();
         server.stop();
@@ -132,6 +145,7 @@ public class StreamingResourceEndpointTests {
 
         assertEquals(DATA_SIZE, downloadClient.requestChunkTransfer(0, DATA_SIZE, OutputStream.nullOutputStream()).get().longValue());
         downloadClient.close();
+        testDone.complete(null);
     }
 
     private static class RandomBytesProducer {
@@ -219,6 +233,7 @@ public class StreamingResourceEndpointTests {
         md5Out.close();
         assertEquals(randomBytesProducer.checksum, md5Out.getChecksum());
         download.close();
+        testDone.complete(null);
     }
 
     @Test
@@ -270,6 +285,7 @@ public class StreamingResourceEndpointTests {
         md5Out.close();
         assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
         download.close();
+        testDone.complete(null);
     }
 
     @Test
@@ -293,6 +309,7 @@ public class StreamingResourceEndpointTests {
         assertTrue(io.getMessage().contains("Upload session was closed before input was signalled to be complete"));
         Exception e = assertThrows(Exception.class, () -> upload.getFinalStatusFuture().join());
         assertTrue(e.getMessage().contains("Upload session was closed before input was signalled to be complete"));
+        testDone.complete(null);
     }
 
     @Test
@@ -356,6 +373,7 @@ public class StreamingResourceEndpointTests {
 
         // we retrieved the data using line-based access, but this should be exactly equivalent to the raw file
         assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
+        testDone.complete(null);
     }
 
     @Test
@@ -364,6 +382,7 @@ public class StreamingResourceEndpointTests {
 
         testFailedDownloadWithInput(uploadProvider, "Failing");
         testFailedDownloadWithInput(uploadProvider, "Failing\n");
+        testDone.complete(null);
     }
 
     private static void testFailedDownloadWithInput(WebsocketUploadProvider uploadProvider, String input) throws IOException, InterruptedException {
@@ -406,6 +425,7 @@ public class StreamingResourceEndpointTests {
         } finally {
             Files.deleteIfExists(dataFile.toPath());
         }
+        testDone.complete(null);
     }
 
     @Test
@@ -425,5 +445,6 @@ public class StreamingResourceEndpointTests {
         } finally {
             Files.deleteIfExists(dataFile.toPath());
         }
+        testDone.complete(null);
     }
 }
