@@ -2,6 +2,7 @@ package step.streaming.websocket.client.upload;
 
 import step.streaming.client.upload.StreamingUploadProvider;
 import step.streaming.client.upload.impl.AbstractStreamingUploadProvider;
+import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.data.LimitedBufferInputStream;
 import step.streaming.data.EndOfInputSignal;
@@ -41,7 +42,7 @@ public class WebsocketUploadProvider extends AbstractStreamingUploadProvider {
     }
 
     @Override
-    protected WebsocketUploadSession startLiveFileUpload(InputStream sourceInputStream, StreamingResourceMetadata metadata, EndOfInputSignal endOfInputSignal) throws IOException {
+    protected WebsocketUploadSession startLiveFileUpload(InputStream sourceInputStream, StreamingResourceMetadata metadata, EndOfInputSignal endOfInputSignal) throws QuotaExceededException, IOException {
         WebsocketUploadSession upload = new WebsocketUploadSession(Objects.requireNonNull(metadata), endOfInputSignal);
         WebsocketUploadClient client = new WebsocketUploadClient(endpointUri, upload);
         executorService.execute(() -> client.performUpload(sourceInputStream));

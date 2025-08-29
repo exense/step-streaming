@@ -48,7 +48,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     }
 
     @Override
-    public String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) throws IOException {
+    public String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) throws QuotaExceededException, IOException {
         StreamingResourceUploadContext uploadContext = (uploadContextId != null && uploadContexts != null) ? uploadContexts.getContext(uploadContextId) : null;
         String resourceId = catalog.createResource(metadata, uploadContext);
         logger.debug("Created new streaming resource: {}, context={}", resourceId, uploadContextId);
@@ -77,9 +77,10 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
      *
      * @param resourceId  the affected resource
      * @param currentSize the last known size of the resource
-     * @throws IOException to signal an error, e.g. quota exceeded or similar. This will effectively abort the upload and set it as FAILED.
+     * @throws QuotaExceededException to signal specifically that quota was exceeded. This will effectively abort the upload and set it as FAILED.
+     * @throws IOException to signal any other I/O error. This will effectively abort the upload and set it as FAILED.
      */
-    protected void onSizeChanged(String resourceId, long currentSize) throws IOException {
+    protected void onSizeChanged(String resourceId, long currentSize) throws QuotaExceededException, IOException {
 
     }
 

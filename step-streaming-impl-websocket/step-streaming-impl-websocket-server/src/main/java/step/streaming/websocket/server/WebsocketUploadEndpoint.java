@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import step.streaming.common.*;
 import step.streaming.data.MD5CalculatingInputStream;
 import step.streaming.server.StreamingResourceManager;
+import step.streaming.util.ExceptionsUtil;
 import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.upload.*;
 
@@ -61,6 +62,19 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         logger.debug("Session opened: {}", session.getId());
     }
 
+    private void closeSession(Exception exception) {
+        // because of some limitations, the QuotaExceededException might be wrapped inside an IOException
+        if (exception instanceof IOException && exception.getCause() instanceof QuotaExceededException) {
+            exception = (QuotaExceededException) exception.getCause();
+        }
+        if (exception instanceof QuotaExceededException) {
+            // this one is handled specially by the client
+            closeSession(session, new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, "QuotaExceededException: " + exception.getMessage()));
+        } else {
+            closeSession(session, new CloseReason(CloseReason.CloseCodes.UNEXPECTED_CONDITION, exception.getMessage()));
+        }
+    }
+
     private void onMessage(String messageString) {
         if (logger.isTraceEnabled()) {
             logger.trace("Message received: {}", messageString);
@@ -75,9 +89,8 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 state = State.UPLOADING;
                 ReadyForUploadMessage reply = new ReadyForUploadMessage(reference);
                 session.getBasicRemote().sendText(reply.toString());
-            } catch (IOException e) {
-                // this will implicitly activate error handling, close the session etc.
-                throw new RuntimeException(e);
+            } catch (IOException | QuotaExceededException e) {
+                closeSession(e);
             }
         } else if (state == State.EXPECTING_FINISHEDMESSAGE && clientMessage instanceof FinishUploadMessage) {
             FinishUploadMessage finishMessage = (FinishUploadMessage) clientMessage;
@@ -117,13 +130,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             state = State.EXPECTING_FINISHEDMESSAGE;
             uploadAcknowledgedMessage = new UploadAcknowledgedMessage(bytesWritten, status.getNumberOfLines(), checksum);
         } catch (IOException e) {
-            String message = e.getMessage();
-            if (e instanceof QuotaExceededException) {
-                // special case to clearly signal specific exception, also handled specially on client side
-                message = String.format("QuotaExceededException: %s", message);
-            }
-            logger.error("Error while uploading data, closing session abnormally", e);
-            closeSession(session, new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, message));
+            closeSession(e);
         }
     }
 

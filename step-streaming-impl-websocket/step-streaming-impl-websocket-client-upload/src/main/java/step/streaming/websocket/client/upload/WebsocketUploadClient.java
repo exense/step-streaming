@@ -18,6 +18,7 @@ import java.net.URI;
 import java.nio.channels.ClosedChannelException;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 public class WebsocketUploadClient {
@@ -54,11 +55,11 @@ public class WebsocketUploadClient {
         return String.format("{session=%s}", jettySession.getId());
     }
 
-    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession) throws IOException {
+    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession) throws QuotaExceededException, IOException {
         this(endpointUri, uploadSession, ContainerProvider.getWebSocketContainer(), DEFAULT_LOCAL_STATUS_UPDATE_INTERVAL_MS);
     }
 
-    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession, WebSocketContainer container, long localStatusUpdateIntervalMs) throws IOException {
+    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession, WebSocketContainer container, long localStatusUpdateIntervalMs) throws QuotaExceededException, IOException {
         UploadProtocolMessage.initialize();
         this.uploadSession = Objects.requireNonNull(uploadSession);
         uploadSession.onClose(this::onUploadSessionClosed);
@@ -108,7 +109,7 @@ public class WebsocketUploadClient {
         }
     }
 
-    private void sendUploadRequestAndAwaitReply() throws IOException {
+    private void sendUploadRequestAndAwaitReply() throws QuotaExceededException, IOException {
         StartUploadMessage request = new StartUploadMessage(uploadSession.getMetadata());
         logger.info("{} Starting upload, metadata={}", this, request.metadata);
         state = State.EXPECTING_REFERENCE;
@@ -120,6 +121,9 @@ public class WebsocketUploadClient {
             uploadSession.setCurrentStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L, null));
             state = State.UPLOADING;
         } catch (Exception e) {
+            if (e instanceof ExecutionException && e.getCause() instanceof QuotaExceededException) {
+                throw (QuotaExceededException) e.getCause();
+            }
             throw new IOException(e);
         }
     }

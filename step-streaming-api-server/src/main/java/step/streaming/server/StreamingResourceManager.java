@@ -1,5 +1,6 @@
 package step.streaming.server;
 
+import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceReference;
 import step.streaming.common.StreamingResourceStatus;
@@ -19,7 +20,7 @@ public interface StreamingResourceManager {
         return false;
     }
 
-    String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) throws IOException;
+    String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) throws QuotaExceededException, IOException;
 
     void deleteResource(String resourceId) throws IOException;
 

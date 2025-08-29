@@ -46,7 +46,7 @@ public class AbstractStreamingUploadProviderTests {
             new Thread(() -> {
                 try {
                     uploadRef.complete(uploads.startTextFileUpload(dummyFile));
-                } catch (IOException e) {
+                } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
             }).start();

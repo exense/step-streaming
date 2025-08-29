@@ -1,5 +1,6 @@
 package step.streaming.client.upload;
 
+import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceMetadata;
 
 import java.io.File;
@@ -60,9 +61,10 @@ public class StreamingUploads {
      *
      * @param textFile the text file to upload.
      * @return a {@link StreamingUpload} representing the active upload.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
      * @throws IOException if the file does not exist, cannot be read, or another I/O error occurs.
      */
-    public StreamingUpload startTextFileUpload(File textFile) throws IOException {
+    public StreamingUpload startTextFileUpload(File textFile) throws QuotaExceededException, IOException {
         return startTextFileUpload(textFile, StandardCharsets.UTF_8);
     }
 
@@ -81,10 +83,11 @@ public class StreamingUploads {
      * @param textFile the text file to upload.
      * @param charset  the {@link Charset} of the source file; must not be {@code null}.
      * @return a {@link StreamingUpload} representing the active upload.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
      * @throws NullPointerException if {@code charset} is {@code null}.
      * @throws IOException if the file does not exist, cannot be read, or another I/O error occurs.
      */
-    public StreamingUpload startTextFileUpload(File textFile, Charset charset) throws IOException {
+    public StreamingUpload startTextFileUpload(File textFile, Charset charset) throws QuotaExceededException, IOException {
         StreamingUploadSession session = provider.startLiveTextFileUpload(
                 textFile,
                 new StreamingResourceMetadata(
@@ -109,9 +112,10 @@ public class StreamingUploads {
      *
      * @param file the binary file to upload.
      * @return a {@link StreamingUpload} representing the active upload.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
      * @throws IOException if the file does not exist, cannot be read, or another I/O error occurs.
      */
-    public StreamingUpload startBinaryFileUpload(File file) throws IOException {
+    public StreamingUpload startBinaryFileUpload(File file) throws QuotaExceededException, IOException {
         StreamingUploadSession session = provider.startLiveBinaryFileUpload(
                 file,
                 new StreamingResourceMetadata(

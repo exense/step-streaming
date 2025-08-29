@@ -2,6 +2,7 @@ package step.streaming.client.upload.impl;
 
 import step.streaming.client.upload.StreamingUploadProvider;
 import step.streaming.client.upload.StreamingUploadSession;
+import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.data.LimitedBufferInputStream;
 import step.streaming.data.EndOfInputSignal;
@@ -133,10 +134,11 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param fileToStream the binary file to upload.
      * @param metadata     metadata describing the file to upload.
      * @return a {@link StreamingUploadSession} representing the active upload.
+     * @throws QuotaExceededException if the server signals that the upload failed due to quota limitations
      * @throws IOException if the file cannot be read or an error occurs during stream setup.
      */
     @Override
-    public StreamingUploadSession startLiveBinaryFileUpload(File fileToStream, StreamingResourceMetadata metadata) throws IOException {
+    public StreamingUploadSession startLiveBinaryFileUpload(File fileToStream, StreamingResourceMetadata metadata) throws QuotaExceededException, IOException {
         return startLiveFileUpload(fileToStream, metadata, null);
     }
 
@@ -147,10 +149,11 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param metadata metadata describing the file to upload.
      * @param charset  the character encoding of the source file.
      * @return a {@link StreamingUploadSession} representing the active upload.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
      * @throws IOException if the file cannot be read or an error occurs during stream setup.
      */
     @Override
-    public StreamingUploadSession startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws IOException {
+    public StreamingUploadSession startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws QuotaExceededException, IOException {
         return startLiveFileUpload(textFile, metadata, charset);
     }
 
@@ -162,9 +165,10 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param metadata           metadata describing the file.
      * @param convertFromCharset if non-null, the character set used to decode the file before converting to UTF-8.
      * @return a {@link StreamingUploadSession} representing the active upload.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
      * @throws IOException if the file cannot be read or the stream cannot be created.
      */
-    protected StreamingUploadSession startLiveFileUpload(File fileToStream, StreamingResourceMetadata metadata, Charset convertFromCharset) throws IOException {
+    protected StreamingUploadSession startLiveFileUpload(File fileToStream, StreamingResourceMetadata metadata, Charset convertFromCharset) throws QuotaExceededException, IOException {
         if (!admissionSemaphore.tryAcquire()) {
             throw new IOException("Upload provider is closed, not accepting new uploads");
         }
@@ -196,12 +200,13 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param sourceInputStream the input stream representing the upload content.
      * @param metadata          the metadata describing the resource.
      * @param endOfInputSignal  the signal used to detect upload completion or cancellation.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
      * @return a {@link StreamingUploadSession} representing the active upload.
      * @throws IOException if the stream setup or transfer initiation fails.
      */
     protected abstract StreamingUploadSession startLiveFileUpload(InputStream sourceInputStream,
                                                                   StreamingResourceMetadata metadata,
-                                                                  EndOfInputSignal endOfInputSignal) throws IOException;
+                                                                  EndOfInputSignal endOfInputSignal) throws QuotaExceededException, IOException;
 
     @Override
     public void close() {

@@ -382,7 +382,7 @@ public class StreamingResourceEndpointTests {
         tearDown();
     }
 
-    private static void testFailedDownloadWithInput(WebsocketUploadProvider uploadProvider, String input) throws IOException, InterruptedException {
+    private static void testFailedDownloadWithInput(WebsocketUploadProvider uploadProvider, String input) throws IOException, QuotaExceededException, InterruptedException {
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
         try {
             var uploadSession = uploadProvider.startLiveTextFileUpload(dataFile, new StreamingResourceMetadata("dummy.txt", TEXT_PLAIN, true), StandardCharsets.UTF_8);
@@ -420,6 +420,21 @@ public class StreamingResourceEndpointTests {
         try {
             IOException e = assertThrows(IOException.class, () -> uploadProvider.startLiveTextFileUpload(dataFile, new StreamingResourceMetadata("dummy.txt", TEXT_PLAIN, true), StandardCharsets.UTF_8));
             assertEquals("WebSocket closed by server: CloseReason[1008,Missing parameter streamingUploadContextId]", e.getMessage());
+        } finally {
+            Files.deleteIfExists(dataFile.toPath());
+        }
+        tearDown();
+    }
+
+    @Test
+    public void testUploadErrorQuotaExceeded() throws Exception {
+        setUp();
+        File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
+        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
+        manager.quotaExceededException = new QuotaExceededException("oops!");
+        try {
+            QuotaExceededException e = assertThrows(QuotaExceededException.class, () -> uploadProvider.startLiveTextFileUpload(dataFile, new StreamingResourceMetadata("dummy.txt", TEXT_PLAIN, true), StandardCharsets.UTF_8));
+            assertEquals("oops!", e.getMessage());
         } finally {
             Files.deleteIfExists(dataFile.toPath());
         }

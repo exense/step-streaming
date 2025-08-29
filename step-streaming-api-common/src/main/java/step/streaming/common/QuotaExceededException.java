@@ -1,8 +1,9 @@
 package step.streaming.common;
 
-import java.io.IOException;
-
-public class QuotaExceededException extends IOException {
+/**
+ * This class indicates errors specifically related to quota enforcement.
+ */
+public class QuotaExceededException extends Exception {
     public QuotaExceededException(String message) {
         super(message);
     }

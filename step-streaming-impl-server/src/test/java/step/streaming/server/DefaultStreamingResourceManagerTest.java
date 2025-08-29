@@ -4,6 +4,7 @@ import org.junit.*;
 import org.junit.function.ThrowingRunnable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
@@ -225,7 +226,7 @@ public class DefaultStreamingResourceManagerTest {
         Assert.assertEquals(0, Objects.requireNonNull(f.listFiles()).length);
     }
 
-    private String uploadAndCheckSizeAndLinebreaks(String fileName, long expectedSize, long expectedNumberOfLines) throws IOException {
+    private String uploadAndCheckSizeAndLinebreaks(String fileName, long expectedSize, long expectedNumberOfLines) throws QuotaExceededException, IOException {
         final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", TEXT_PLAIN, true), null);
         InputStream is = getClass().getClassLoader().getResourceAsStream(fileName);
         long size = manager.writeChunk(resourceId, is);

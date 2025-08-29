@@ -63,16 +63,25 @@ public class StreamingUpload {
      *
      * @param timeout the maximum time to wait for the final status; must not be {@code null}.
      * @return the final {@link StreamingResourceStatus} of the upload.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
      * @throws NullPointerException if {@code timeout} is {@code null}.
      * @throws InterruptedException if the current thread is interrupted while waiting.
      * @throws ExecutionException if the upload completed exceptionally; the cause can be
      *                             retrieved from {@link ExecutionException#getCause()}.
      * @throws TimeoutException if the given timeout elapses before the final status is available.
      */
-    public StreamingResourceStatus complete(Duration timeout) throws ExecutionException, InterruptedException, TimeoutException {
+    public StreamingResourceStatus complete(Duration timeout) throws QuotaExceededException, ExecutionException, InterruptedException, TimeoutException {
         Objects.requireNonNull(timeout);
         session.signalEndOfInput();
-        return session.getFinalStatusFuture().get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        try {
+            return session.getFinalStatusFuture().get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (ExecutionException e) {
+            // special case: unwrap QuotaExceededException
+            if (e.getCause() instanceof QuotaExceededException) {
+                throw (QuotaExceededException) e.getCause();
+            }
+            throw e;
+        }
     }
 
 
@@ -84,13 +93,14 @@ public class StreamingUpload {
      * {@link StreamingResourceStatus} becomes available, indicating upload completion.
      *
      * @return the final {@link StreamingResourceStatus} of the upload.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
      * @throws InterruptedException if the current thread is interrupted while waiting.
      * @throws ExecutionException if the upload completed exceptionally; the cause can be
      *                             retrieved from {@link ExecutionException#getCause()}.
      *
      * @see #complete(Duration)
      */
-    public StreamingResourceStatus complete() throws ExecutionException, InterruptedException, QuotaExceededException {
+    public StreamingResourceStatus complete() throws QuotaExceededException, ExecutionException, InterruptedException {
         session.signalEndOfInput();
         try {
             return session.getFinalStatusFuture().get();
