@@ -118,7 +118,7 @@ public class StreamingResourceEndpointTests {
     }
 
     @Test
-    public void testLowLevelUploadFollowedByOneShotDownload() throws Exception {
+    public synchronized void testLowLevelUploadFollowedByOneShotDownload() throws Exception {
         setUp();
         long DATA_SIZE = 500_000L;
         StreamingResourceMetadata metadata = new StreamingResourceMetadata("test.txt", TEXT_PLAIN, true);
@@ -193,7 +193,7 @@ public class StreamingResourceEndpointTests {
 
 
     @Test
-    public void testHighLevelUploadWithSimultaneousDownloadsRandomData() throws Exception {
+    public synchronized void testHighLevelUploadWithSimultaneousDownloadsRandomData() throws Exception {
         setUp();
         long DATA_SIZE = 200_000_000L;
         RandomBytesProducer randomBytesProducer = new RandomBytesProducer(DATA_SIZE, 5, TimeUnit.SECONDS);
@@ -235,7 +235,7 @@ public class StreamingResourceEndpointTests {
     }
 
     @Test
-    public void testHighLevelUploadWithSimultaneousDownloadsWithTextConversion() throws Exception {
+    public synchronized void testHighLevelUploadWithSimultaneousDownloadsWithTextConversion() throws Exception {
         setUp();
         URL url = Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt");
         File sourceFile = new File(url.toURI());
@@ -288,7 +288,7 @@ public class StreamingResourceEndpointTests {
     }
 
     @Test
-    public void testErrorScenarios() throws Exception {
+    public synchronized void testErrorScenarios() throws Exception {
         setUp();
         File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
         FileBytesProducer uploadProducer = new FileBytesProducer(sourceFile, 15, TimeUnit.SECONDS);
@@ -313,7 +313,7 @@ public class StreamingResourceEndpointTests {
     }
 
     @Test
-    public void testLineBasedDownload() throws Exception {
+    public synchronized void testLineBasedDownload() throws Exception {
         setUp();
         File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
         FileBytesProducer uploadProducer = new FileBytesProducer(sourceFile, 15, TimeUnit.SECONDS);
@@ -378,7 +378,7 @@ public class StreamingResourceEndpointTests {
     }
 
     @Test
-    public void testFailedDownload() throws Exception {
+    public synchronized void testFailedDownload() throws Exception {
         setUp();
         WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
 
@@ -416,7 +416,7 @@ public class StreamingResourceEndpointTests {
 
 
     @Test
-    public void testUploadErrorContextRequired() throws Exception {
+    public synchronized void testUploadErrorContextRequired() throws Exception {
         setUp();
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
         WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
@@ -432,7 +432,7 @@ public class StreamingResourceEndpointTests {
     }
 
     @Test
-    public void testUploadErrorQuotaExceeded() throws Exception {
+    public synchronized void testUploadErrorQuotaExceeded() throws Exception {
         setUp();
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
         WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
@@ -447,7 +447,7 @@ public class StreamingResourceEndpointTests {
     }
 
     @Test
-    public void testSizeRestrictionCallback() throws Exception {
+    public synchronized void testSizeRestrictionCallback() throws Exception {
         setUp();
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
         StreamingUploads uploads = new StreamingUploads(new WebsocketUploadProvider(uploadUri));
