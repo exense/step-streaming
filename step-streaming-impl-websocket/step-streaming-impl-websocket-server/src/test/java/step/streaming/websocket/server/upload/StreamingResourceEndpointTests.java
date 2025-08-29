@@ -83,6 +83,11 @@ public class StreamingResourceEndpointTests {
 
     public void tearDown() throws Exception {
         logger.info("tearDown() starting, server=" + server);
+        try {
+            throw new RuntimeException("This exception is harmless, to diagnose build server behavior");
+        } catch (Exception e) {
+            logger.info("tearDown() dummy exception", e);
+        }
         Thread.sleep(100);
         sessionsHandler.shutdown();
         server.stop();
