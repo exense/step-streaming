@@ -1,6 +1,8 @@
 package step.streaming.websocket.server.upload;
 
 import jakarta.websocket.server.ServerEndpointConfig;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,10 +46,6 @@ import static org.junit.Assert.*;
 import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.APPLICATION_OCTET_STREAM;
 import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN;
 
-/* Important note:
-Our build server seems to run these tests in parallel, which causes problems with the "global" instance methods.
-This is why all test methods are defined as synchronized, and do the setUp() and tearDown() by themselves.
- */
 public class StreamingResourceEndpointTests {
     private static final Logger logger = LoggerFactory.getLogger("UNITTEST");
     private TestingStorageBackend storageBackend;
@@ -61,9 +59,8 @@ public class StreamingResourceEndpointTests {
     private static final String FAUST_ISO8859_CHECKSUM = "317c7a8df8c817c80bf079cfcbbc6686";
     private static final String FAUST_UTF8_CHECKSUM = "540441d13a31641d7775d91c46c94511";
 
-
+    @Before
     public void setUp() throws Exception {
-        logger.info("setUp() starting");
         sessionsHandler = new DefaultWebsocketServerEndpointSessionsHandler();
         storageBackend = new TestingStorageBackend(1000L, false);
         catalogBackend = new InMemoryCatalogBackend();
@@ -75,21 +72,14 @@ public class StreamingResourceEndpointTests {
         server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
         referenceProducer.setBaseUri(server.getURI());
         uploadUri = server.getURI(WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL);
-        logger.info("setUp() done, server=" + server);
     }
 
+    @After
     public void tearDown() throws Exception {
-        logger.info("tearDown() starting, server=" + server);
-        try {
-            throw new RuntimeException("This exception is harmless, to diagnose build server behavior");
-        } catch (Exception e) {
-            logger.info("tearDown() dummy exception", e);
-        }
         Thread.sleep(100);
         sessionsHandler.shutdown();
         server.stop();
         storageBackend.cleanup();
-        logger.info("tearDown() done");
     }
 
     private ServerEndpointConfig uploadConfig() {
@@ -115,8 +105,7 @@ public class StreamingResourceEndpointTests {
     }
 
     @Test
-    public synchronized void testLowLevelUploadFollowedByOneShotDownload() throws Exception {
-        setUp();
+    public void testLowLevelUploadFollowedByOneShotDownload() throws Exception {
         long DATA_SIZE = 500_000L;
         StreamingResourceMetadata metadata = new StreamingResourceMetadata("test.txt", TEXT_PLAIN, true);
         WebsocketUploadSession upload = new WebsocketUploadSession(metadata, new EndOfInputSignal());
@@ -139,7 +128,6 @@ public class StreamingResourceEndpointTests {
 
         assertEquals(DATA_SIZE, downloadClient.requestChunkTransfer(0, DATA_SIZE, OutputStream.nullOutputStream()).get().longValue());
         downloadClient.close();
-        tearDown();
     }
 
     private static class RandomBytesProducer {
@@ -188,10 +176,8 @@ public class StreamingResourceEndpointTests {
         }
     }
 
-
     @Test
-    public synchronized void testHighLevelUploadWithSimultaneousDownloadsRandomData() throws Exception {
-        setUp();
+    public void testHighLevelUploadWithSimultaneousDownloadsRandomData() throws Exception {
         long DATA_SIZE = 200_000_000L;
         RandomBytesProducer randomBytesProducer = new RandomBytesProducer(DATA_SIZE, 5, TimeUnit.SECONDS);
 
@@ -228,12 +214,10 @@ public class StreamingResourceEndpointTests {
         md5Out.close();
         assertEquals(randomBytesProducer.checksum, md5Out.getChecksum());
         download.close();
-        tearDown();
     }
 
     @Test
-    public synchronized void testHighLevelUploadWithSimultaneousDownloadsWithTextConversion() throws Exception {
-        setUp();
+    public void testHighLevelUploadWithSimultaneousDownloadsWithTextConversion() throws Exception {
         URL url = Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt");
         File sourceFile = new File(url.toURI());
         long INPUT_DATA_SIZE = 10171; // in ISO-8859-1 format
@@ -281,12 +265,10 @@ public class StreamingResourceEndpointTests {
         md5Out.close();
         assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
         download.close();
-        tearDown();
     }
 
     @Test
-    public synchronized void testErrorScenarios() throws Exception {
-        setUp();
+    public void testErrorScenarios() throws Exception {
         File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
         FileBytesProducer uploadProducer = new FileBytesProducer(sourceFile, 15, TimeUnit.SECONDS);
 
@@ -306,12 +288,10 @@ public class StreamingResourceEndpointTests {
         assertTrue(io.getMessage().contains("Upload session was closed before input was signalled to be complete"));
         Exception e = assertThrows(Exception.class, () -> upload.getFinalStatusFuture().join());
         assertTrue(e.getMessage().contains("Upload session was closed before input was signalled to be complete"));
-        tearDown();
     }
 
     @Test
-    public synchronized void testLineBasedDownload() throws Exception {
-        setUp();
+    public void testLineBasedDownload() throws Exception {
         File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
         FileBytesProducer uploadProducer = new FileBytesProducer(sourceFile, 15, TimeUnit.SECONDS);
 
@@ -371,17 +351,14 @@ public class StreamingResourceEndpointTests {
 
         // we retrieved the data using line-based access, but this should be exactly equivalent to the raw file
         assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
-        tearDown();
     }
 
     @Test
-    public synchronized void testFailedDownload() throws Exception {
-        setUp();
+    public void testFailedDownload() throws Exception {
         WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
 
         testFailedDownloadWithInput(uploadProvider, "Failing");
         testFailedDownloadWithInput(uploadProvider, "Failing\n");
-        tearDown();
     }
 
     private static void testFailedDownloadWithInput(WebsocketUploadProvider uploadProvider, String input) throws IOException, QuotaExceededException, InterruptedException {
@@ -411,10 +388,8 @@ public class StreamingResourceEndpointTests {
         }
     }
 
-
     @Test
-    public synchronized void testUploadErrorContextRequired() throws Exception {
-        setUp();
+    public void testUploadErrorContextRequired() throws Exception {
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
         WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
         // ask manager to require context (but we don't provide one)
@@ -425,12 +400,10 @@ public class StreamingResourceEndpointTests {
         } finally {
             Files.deleteIfExists(dataFile.toPath());
         }
-        tearDown();
     }
 
     @Test
-    public synchronized void testUploadErrorQuotaExceeded() throws Exception {
-        setUp();
+    public void testUploadErrorQuotaExceeded() throws Exception {
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
         WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
         manager.quotaExceededException = new QuotaExceededException("oops!");
@@ -440,12 +413,10 @@ public class StreamingResourceEndpointTests {
         } finally {
             Files.deleteIfExists(dataFile.toPath());
         }
-        tearDown();
     }
 
     @Test
-    public synchronized void testSizeRestrictionCallback() throws Exception {
-        setUp();
+    public void testSizeRestrictionCallback() throws Exception {
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
         StreamingUploads uploads = new StreamingUploads(new WebsocketUploadProvider(uploadUri));
         try {
@@ -461,6 +432,5 @@ public class StreamingResourceEndpointTests {
         } finally {
             Files.deleteIfExists(dataFile.toPath());
         }
-        tearDown();
     }
 }
