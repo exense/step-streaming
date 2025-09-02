@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
 import step.streaming.common.*;
 import step.streaming.data.MD5CalculatingInputStream;
 import step.streaming.server.StreamingResourceManager;
-import step.streaming.util.ExceptionsUtil;
+import step.streaming.websocket.CloseReasonUtil;
 import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.upload.*;
 
@@ -52,7 +52,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 .getOrDefault(StreamingResourceUploadContext.PARAMETER_NAME, List.of())
                 .stream().findFirst().ifPresent(ctx -> uploadContextId = ctx);
         if (manager.isUploadContextRequired() && uploadContextId == null) {
-            closeSession(session, new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, "Missing parameter " + StreamingResourceUploadContext.PARAMETER_NAME));
+            closeSession(session, CloseReasonUtil.makeSafeCloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, "Missing parameter " + StreamingResourceUploadContext.PARAMETER_NAME));
             return;
         }
         Optional.ofNullable(sessionsHandler).ifPresent(handler -> handler.register(session));
@@ -69,9 +69,9 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         }
         if (exception instanceof QuotaExceededException) {
             // this one is handled specially by the client
-            closeSession(session, new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, "QuotaExceededException: " + exception.getMessage()));
+            closeSession(session, CloseReasonUtil.makeSafeCloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, "QuotaExceededException: " + exception.getMessage()));
         } else {
-            closeSession(session, new CloseReason(CloseReason.CloseCodes.UNEXPECTED_CONDITION, exception.getMessage()));
+            closeSession(session, CloseReasonUtil.makeSafeCloseReason(CloseReason.CloseCodes.UNEXPECTED_CONDITION, exception.getMessage()));
         }
     }
 

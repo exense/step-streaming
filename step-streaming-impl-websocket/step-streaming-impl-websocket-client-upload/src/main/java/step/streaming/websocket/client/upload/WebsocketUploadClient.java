@@ -9,6 +9,7 @@ import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
 import step.streaming.data.CheckpointingOutputStream;
 import step.streaming.data.MD5CalculatingOutputStream;
+import step.streaming.websocket.CloseReasonUtil;
 import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.upload.*;
 
@@ -140,7 +141,7 @@ public class WebsocketUploadClient {
 
     private void closeSessionAbnormally(String message, Exception optionalOuterExceptionContext) {
         try {
-            endpoint.closeSession(jettySession, new CloseReason(CloseReason.CloseCodes.UNEXPECTED_CONDITION, message));
+            endpoint.closeSession(jettySession, CloseReasonUtil.makeSafeCloseReason(CloseReason.CloseCodes.UNEXPECTED_CONDITION, message));
         } catch (Exception inner) {
             if (optionalOuterExceptionContext != null) {
                 optionalOuterExceptionContext.addSuppressed(inner);
@@ -191,7 +192,7 @@ public class WebsocketUploadClient {
     }
 
     private void closeSessionNormally() throws IOException {
-        CloseReason closeReason = new CloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, UploadProtocolMessage.CLOSEREASON_PHRASE_UPLOAD_COMPLETED);
+        CloseReason closeReason = CloseReasonUtil.makeSafeCloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, UploadProtocolMessage.CLOSEREASON_PHRASE_UPLOAD_COMPLETED);
         logger.debug("About to close session {} with reason: {}", jettySession.getId(), closeReason);
         endpoint.closeSession(jettySession, closeReason);
     }

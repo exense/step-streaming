@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
+import step.streaming.websocket.CloseReasonUtil;
 import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.download.*;
 
@@ -219,7 +220,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
                 if (state != State.READY) {
                     logger.warn("Closing session while in state {}, this may cause erroneous behaviour", state);
                 }
-                endpoint.closeSession(session, new CloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, "Client Session closed"));
+                endpoint.closeSession(session, CloseReasonUtil.makeSafeCloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, "Client Session closed"));
             }
             state = State.CLOSED;
         }
