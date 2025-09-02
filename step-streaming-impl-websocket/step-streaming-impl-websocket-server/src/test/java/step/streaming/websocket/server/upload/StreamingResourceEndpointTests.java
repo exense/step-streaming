@@ -45,11 +45,8 @@ import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.AP
 import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN;
 
 /* Important note:
-On the build server (only), something extremely weird was happening when the setup and teardown methods
-were annotated with @Before and @After: the teardown method would be run BEFORE the actual test methods
-were completed, causing failing tests. I have no clue what the hell was happening there, and I couldn't
-reproduce it locally. The attempt to fix it is to have each test explicitly call the setup and teardown
-methods. It's cumbersome, but hopefully fixes the situation...
+Our build server seems to run these tests in parallel, which causes problems with the "global" instance methods.
+This is why all test methods are defined as synchronized, and do the setUp() and tearDown() by themselves.
  */
 public class StreamingResourceEndpointTests {
     private static final Logger logger = LoggerFactory.getLogger("UNITTEST");
@@ -199,7 +196,7 @@ public class StreamingResourceEndpointTests {
         RandomBytesProducer randomBytesProducer = new RandomBytesProducer(DATA_SIZE, 5, TimeUnit.SECONDS);
 
         WebsocketUploadProvider provider = new WebsocketUploadProvider(uploadUri);
-        StreamingUploadSession upload = provider.startLiveBinaryFileUpload(randomBytesProducer.file, new StreamingResourceMetadata("test.bin", APPLICATION_OCTET_STREAM, true));
+        StreamingUploadSession upload = provider.startLiveBinaryFileUpload(randomBytesProducer.file, new StreamingResourceMetadata("test.bin", APPLICATION_OCTET_STREAM, false));
         WebsocketDownload download = new WebsocketDownload(upload.getReference());
         AtomicReference<String> downloadChecksum = new AtomicReference<>();
         Thread downloadThread = new Thread(() -> {

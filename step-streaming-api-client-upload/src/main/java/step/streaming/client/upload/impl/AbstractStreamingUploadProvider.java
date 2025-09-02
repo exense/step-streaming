@@ -19,7 +19,7 @@ import java.util.concurrent.*;
 /**
  * Abstract base class for implementing a {@link StreamingUploadProvider}.
  * <p>
- * This class provides shared logic for initiating live streaming uploads from
+ * This class provides shared logic for initiating live-streaming uploads from
  * either binary or text files. It handles file polling, buffering, optional character
  * set conversion for text content, and the creation of appropriate input stream wrappers.
  * <p>
@@ -135,10 +135,17 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param metadata     metadata describing the file to upload.
      * @return a {@link StreamingUploadSession} representing the active upload.
      * @throws QuotaExceededException if the server signals that the upload failed due to quota limitations
+     * @throws NullPointerException if any of the arguments is missing
+     * @throws IllegalArgumentException if an invalid argument combination is provided
      * @throws IOException if the file cannot be read or an error occurs during stream setup.
      */
     @Override
     public StreamingUploadSession startLiveBinaryFileUpload(File fileToStream, StreamingResourceMetadata metadata) throws QuotaExceededException, IOException {
+        Objects.requireNonNull(fileToStream, "fileToStream must not be null");
+        Objects.requireNonNull(metadata, "metadata is required");
+        if (metadata.getSupportsLineAccess()) {
+            throw new IllegalArgumentException("metadata indicates line-access support, which is not allowed for binary files. Use startLiveTextFileUpload instead.");
+        }
         return startLiveFileUpload(fileToStream, metadata, null);
     }
 
@@ -150,10 +157,17 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param charset  the character encoding of the source file.
      * @return a {@link StreamingUploadSession} representing the active upload.
      * @throws QuotaExceededException if the upload failed due to quota limitations
+     * @throws NullPointerException if any of the arguments is missing
      * @throws IOException if the file cannot be read or an error occurs during stream setup.
      */
     @Override
     public StreamingUploadSession startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws QuotaExceededException, IOException {
+        Objects.requireNonNull(textFile, "textFile is required");
+        Objects.requireNonNull(metadata, "metadata is required");
+        Objects.requireNonNull(charset, "charset is required for text files");
+        // Note: we're not currently forcing users to set the line-access support flag in the metadata. This allows users to directly use this low-level
+        // method to upload a text file (including potential conversion to UTF-8), but without "tagging" the metadata for server-side indexing and processing
+        // as text files, which means that the file would only be downloadable, but not "viewable" line-by-line. Do we want to enforce this instead?
         return startLiveFileUpload(textFile, metadata, charset);
     }
 
@@ -166,7 +180,7 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param convertFromCharset if non-null, the character set used to decode the file before converting to UTF-8.
      * @return a {@link StreamingUploadSession} representing the active upload.
      * @throws QuotaExceededException if the upload failed due to quota limitations
-     * @throws IOException if the file cannot be read or the stream cannot be created.
+     * @throws IOException if the file cannot be read or the stream cannot be created
      */
     protected StreamingUploadSession startLiveFileUpload(File fileToStream, StreamingResourceMetadata metadata, Charset convertFromCharset) throws QuotaExceededException, IOException {
         if (!admissionSemaphore.tryAcquire()) {

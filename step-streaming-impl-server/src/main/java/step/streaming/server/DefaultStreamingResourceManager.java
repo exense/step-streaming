@@ -105,7 +105,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
             logger.debug("Delegated chunk write for {} (current size: {})", resourceId, currentSize);
             return currentSize;
         } catch (IOException e) {
-            logger.warn("IOException during writeChunk for {} — marking FAILED", resourceId, e);
+            logger.warn("IOException during writeChunk for {} — marking FAILED: {}", resourceId, e.getMessage());
             markFailed(resourceId);
             throw e;
         }

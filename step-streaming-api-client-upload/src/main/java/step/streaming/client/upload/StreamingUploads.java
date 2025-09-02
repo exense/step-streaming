@@ -15,7 +15,7 @@ import java.util.Objects;
  * This class wraps a {@link StreamingUploadProvider} and exposes simplified methods
  * for initiating common types of uploads:
  * <ul>
- *   <li>Text file uploads, using a specified or default character encoding</li>
+ *   <li>Text file uploads, using a specified, or the default UTF-8 character encoding</li>
  *   <li>Binary file uploads</li>
  * </ul>
  * <p>
@@ -62,7 +62,7 @@ public class StreamingUploads {
      * @param textFile the text file to upload.
      * @return a {@link StreamingUpload} representing the active upload.
      * @throws QuotaExceededException if the upload failed due to quota limitations
-     * @throws IOException if the file does not exist, cannot be read, or another I/O error occurs.
+     * @throws IOException            if the file does not exist, cannot be read, or another I/O error occurs.
      */
     public StreamingUpload startTextFileUpload(File textFile) throws QuotaExceededException, IOException {
         return startTextFileUpload(textFile, StandardCharsets.UTF_8);
@@ -79,13 +79,16 @@ public class StreamingUploads {
      * </ul>
      * The {@link StreamingUploadProvider#startLiveTextFileUpload(File, StreamingResourceMetadata, Charset)}
      * method is then invoked, and the resulting {@link StreamingUploadSession} is wrapped in a {@link StreamingUpload}.
+     * <p>
+     * If you need more control over the metadata, like specifying a different filename or MIME type, directly use
+     * {@link StreamingUploadProvider#startLiveTextFileUpload(File, StreamingResourceMetadata, Charset) of the provider.
      *
      * @param textFile the text file to upload.
      * @param charset  the {@link Charset} of the source file; must not be {@code null}.
      * @return a {@link StreamingUpload} representing the active upload.
      * @throws QuotaExceededException if the upload failed due to quota limitations
-     * @throws NullPointerException if {@code charset} is {@code null}.
-     * @throws IOException if the file does not exist, cannot be read, or another I/O error occurs.
+     * @throws NullPointerException   if {@code charset} is {@code null}
+     * @throws IOException            if the file does not exist, cannot be read, or another I/O error occurs
      */
     public StreamingUpload startTextFileUpload(File textFile, Charset charset) throws QuotaExceededException, IOException {
         StreamingUploadSession session = provider.startLiveTextFileUpload(
@@ -109,11 +112,14 @@ public class StreamingUploads {
      * </ul>
      * The {@link StreamingUploadProvider#startLiveBinaryFileUpload(File, StreamingResourceMetadata)}
      * method is then invoked, and the resulting {@link StreamingUploadSession} is wrapped in a {@link StreamingUpload}.
+     * <p>
+     * If you need more control over the metadata, like specifying a different filename or MIME type, directly use
+     * {@link StreamingUploadProvider#startLiveBinaryFileUpload(File, StreamingResourceMetadata)} of the provider.
      *
      * @param file the binary file to upload.
      * @return a {@link StreamingUpload} representing the active upload.
      * @throws QuotaExceededException if the upload failed due to quota limitations
-     * @throws IOException if the file does not exist, cannot be read, or another I/O error occurs.
+     * @throws IOException            if the file does not exist, cannot be read, or another I/O error occurs
      */
     public StreamingUpload startBinaryFileUpload(File file) throws QuotaExceededException, IOException {
         StreamingUploadSession session = provider.startLiveBinaryFileUpload(
