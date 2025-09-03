@@ -12,12 +12,13 @@ import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.Executors;
 
 public class LocalUploadTests {
 
     @Test
     public void testDiscardingUpload() throws Exception {
-        StreamingUploads uploads = new StreamingUploads(new DiscardingStreamingUploadProvider());
+        StreamingUploads uploads = new StreamingUploads(new DiscardingStreamingUploadProvider(Executors.newSingleThreadExecutor()));
         File liveFile = Files.createTempFile("streaming-upload-test-", ".txt").toFile();
         LineProducer producer = new LineProducer(liveFile, 10, 200);
         try {
@@ -36,7 +37,7 @@ public class LocalUploadTests {
     @Test
     public void testDirectoryUpload() throws Exception {
         File tmpDir = Files.createTempDirectory("streaming-upload-test-").toFile();
-        StreamingUploads uploads = new StreamingUploads(new LocalDirectoryBackedStreamingUploadProvider(tmpDir));
+        StreamingUploads uploads = new StreamingUploads(new LocalDirectoryBackedStreamingUploadProvider(Executors.newSingleThreadExecutor(), tmpDir));
         File liveFile = Files.createTempFile("streaming-upload-test-", ".txt").toFile();
         LineProducer producer = new LineProducer(liveFile, 10, 200);
         try {

@@ -38,6 +38,8 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -55,6 +57,7 @@ public class StreamingResourceEndpointTests {
     private URITemplateBasedReferenceProducer referenceProducer;
     private TestingWebsocketServer server;
     private URI uploadUri;
+    private ExecutorService executor = Executors.newFixedThreadPool(10);
 
     private static final String FAUST_ISO8859_CHECKSUM = "317c7a8df8c817c80bf079cfcbbc6686";
     private static final String FAUST_UTF8_CHECKSUM = "540441d13a31641d7775d91c46c94511";
@@ -181,7 +184,7 @@ public class StreamingResourceEndpointTests {
         long DATA_SIZE = 200_000_000L;
         RandomBytesProducer randomBytesProducer = new RandomBytesProducer(DATA_SIZE, 5, TimeUnit.SECONDS);
 
-        WebsocketUploadProvider provider = new WebsocketUploadProvider(uploadUri);
+        WebsocketUploadProvider provider = new WebsocketUploadProvider(executor, uploadUri);
         StreamingUploadSession upload = provider.startLiveBinaryFileUpload(randomBytesProducer.file, new StreamingResourceMetadata("test.bin", APPLICATION_OCTET_STREAM, false));
         WebsocketDownload download = new WebsocketDownload(upload.getReference());
         AtomicReference<String> downloadChecksum = new AtomicReference<>();
@@ -225,7 +228,7 @@ public class StreamingResourceEndpointTests {
         Long OUTPUT_LINES = 296L;
         FileBytesProducer isoBytesProducer = new FileBytesProducer(sourceFile, 5, TimeUnit.SECONDS);
 
-        WebsocketUploadProvider provider = new WebsocketUploadProvider(uploadUri);
+        WebsocketUploadProvider provider = new WebsocketUploadProvider(executor, uploadUri);
         // This will transcode the file to UTF-8 on upload (on the fly)
         StreamingUploadSession upload = provider.startLiveTextFileUpload(isoBytesProducer.file, new StreamingResourceMetadata("faust.txt", TEXT_PLAIN, true), StandardCharsets.ISO_8859_1);
         WebsocketDownload download = new WebsocketDownload(upload.getReference());
@@ -272,7 +275,7 @@ public class StreamingResourceEndpointTests {
         File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
         FileBytesProducer uploadProducer = new FileBytesProducer(sourceFile, 15, TimeUnit.SECONDS);
 
-        WebsocketUploadProvider provider = new WebsocketUploadProvider(uploadUri);
+        WebsocketUploadProvider provider = new WebsocketUploadProvider(executor, uploadUri);
         StreamingUploadSession upload = provider.startLiveTextFileUpload(uploadProducer.file, new StreamingResourceMetadata("faust.txt", TEXT_PLAIN, true), StandardCharsets.ISO_8859_1);
         Thread producerThread = new Thread(() -> {
             try {
@@ -295,7 +298,7 @@ public class StreamingResourceEndpointTests {
         File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
         FileBytesProducer uploadProducer = new FileBytesProducer(sourceFile, 15, TimeUnit.SECONDS);
 
-        WebsocketUploadProvider provider = new WebsocketUploadProvider(uploadUri);
+        WebsocketUploadProvider provider = new WebsocketUploadProvider(executor, uploadUri);
         StreamingUploadSession upload = provider.startLiveTextFileUpload(uploadProducer.file, new StreamingResourceMetadata("faust.txt", TEXT_PLAIN, true), StandardCharsets.ISO_8859_1);
 
         WebsocketDownloadClient downloadClient = new WebsocketDownloadClient(upload.getReference().getUri());
@@ -355,7 +358,7 @@ public class StreamingResourceEndpointTests {
 
     @Test
     public void testFailedDownload() throws Exception {
-        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
+        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(executor, uploadUri);
 
         testFailedDownloadWithInput(uploadProvider, "Failing");
         testFailedDownloadWithInput(uploadProvider, "Failing\n");
@@ -391,7 +394,7 @@ public class StreamingResourceEndpointTests {
     @Test
     public void testUploadErrorContextRequired() throws Exception {
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
-        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
+        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(executor, uploadUri);
         // ask manager to require context (but we don't provide one)
         manager.uploadContextRequired = true;
         try {
@@ -405,7 +408,7 @@ public class StreamingResourceEndpointTests {
     @Test
     public void testUploadErrorQuotaExceeded() throws Exception {
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
-        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(uploadUri);
+        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(executor, uploadUri);
         manager.quotaExceededException = new QuotaExceededException("oops!");
         try {
             QuotaExceededException e = assertThrows(QuotaExceededException.class, () -> uploadProvider.startLiveTextFileUpload(dataFile, new StreamingResourceMetadata("dummy.txt", TEXT_PLAIN, true), StandardCharsets.UTF_8));
@@ -418,7 +421,7 @@ public class StreamingResourceEndpointTests {
     @Test
     public void testSizeRestrictionCallback() throws Exception {
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
-        StreamingUploads uploads = new StreamingUploads(new WebsocketUploadProvider(uploadUri));
+        StreamingUploads uploads = new StreamingUploads(new WebsocketUploadProvider(executor, uploadUri));
         try {
             StreamingUpload upload = uploads.startTextFileUpload(dataFile);
             manager.sizeChecker = value -> {

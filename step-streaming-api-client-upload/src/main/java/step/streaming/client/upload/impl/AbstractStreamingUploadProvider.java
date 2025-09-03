@@ -42,11 +42,6 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
     public static final int DEFAULT_BUFFER_SIZE = 64;
 
     /**
-     * Default thread pool size used for executing concurrent uploads.
-     */
-    public static final int DEFAULT_CONCURRENT_UPLOAD_POOL_SIZE = 100;
-
-    /**
      * Interval (in milliseconds) between polling operations when reading from a growing file.
      */
     protected long uploadFilePollInterval = DEFAULT_FILE_POLL_INTERVAL_MS;
@@ -64,13 +59,10 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
     /**
      * Creates a new instance with a fixed-size thread pool for concurrent uploads.
      *
-     * @param uploadThreadPoolSize the number of concurrent upload threads to allow.
+     * @param executorService the executor service to use for uploads
      */
-    public AbstractStreamingUploadProvider(int uploadThreadPoolSize) {
-        if (uploadThreadPoolSize <= 0) {
-            throw new IllegalArgumentException("Upload thread pool size must be greater than zero.");
-        }
-        executorService = Executors.newFixedThreadPool(uploadThreadPoolSize);
+    public AbstractStreamingUploadProvider(ExecutorService executorService) {
+        this.executorService = executorService;
     }
 
     /**
