@@ -1,5 +1,6 @@
 package step.streaming.client.upload;
 
+import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceMetadata;
 
 import java.io.Closeable;
@@ -38,11 +39,12 @@ public interface StreamingUploadProvider {
      * @param fileToStream the file to upload.
      * @param metadata     the metadata describing the file, such as file name and content type.
      * @return a {@link StreamingUploadSession} instance representing the active upload.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
      * @throws IOException if the file does not exist, cannot be read, or another I/O error occurs.
      * @see StreamingUploadSession#signalEndOfInput()
      * @see #startLiveTextFileUpload(File, StreamingResourceMetadata, Charset)
      */
-    StreamingUploadSession startLiveBinaryFileUpload(File fileToStream, StreamingResourceMetadata metadata) throws IOException;
+    StreamingUploadSession startLiveBinaryFileUpload(File fileToStream, StreamingResourceMetadata metadata) throws QuotaExceededException, IOException;
 
     /**
      * Starts a streaming upload of a text file.
@@ -70,11 +72,12 @@ public interface StreamingUploadProvider {
      * @param metadata the metadata describing the file, such as file name and content type.
      * @param charset  the {@link Charset} (encoding) of the source file; must not be {@code null}.
      * @return a {@link StreamingUploadSession} instance representing the active upload.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
      * @throws IOException if the file does not exist, cannot be read, or another I/O error occurs.
      * @see StreamingUploadSession#signalEndOfInput()
      * @see #startLiveBinaryFileUpload(File, StreamingResourceMetadata)
      */
-    StreamingUploadSession startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws IOException;
+    StreamingUploadSession startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws QuotaExceededException, IOException;
 
     /**
      * Closing a provider means cancelling any potential ongoing uploads.

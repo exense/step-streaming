@@ -7,6 +7,7 @@ package step.streaming.common;
  * <ul>
  *   <li>a new streaming resource is created</li>
  *   <li>the status of an existing streaming resource changes</li>
+ *   <li>an attempt to create a streaming resource failed</li>
  * </ul>
  * These callbacks are typically used for tracking upload progress, reacting to completion, or handling errors.
  */
@@ -27,4 +28,12 @@ public interface StreamingResourceUploadContextListener {
      * @param status     the new status of the resource
      */
     void onResourceStatusChanged(String resourceId, StreamingResourceStatus status);
+
+    /**
+     * Called when a streaming upload was requested by a client, but was refused by the server, for instance
+     * due to quota restrictions.
+     * @param metadata the resource metadata associated with the rejected upload request
+     * @param reasonPhrase a human-readable explanation for refusing the upload
+     */
+    void onResourceCreationRefused(StreamingResourceMetadata metadata, String reasonPhrase);
 }

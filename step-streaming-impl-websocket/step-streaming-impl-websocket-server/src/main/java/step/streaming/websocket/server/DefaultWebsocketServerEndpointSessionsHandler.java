@@ -4,6 +4,7 @@ import jakarta.websocket.CloseReason;
 import jakarta.websocket.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import step.streaming.websocket.CloseReasonUtil;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -82,7 +83,7 @@ public class DefaultWebsocketServerEndpointSessionsHandler implements WebsocketS
             sessions.remove(session);
             if (session.isOpen()) {
                 try {
-                    session.close(new CloseReason(CloseReason.CloseCodes.GOING_AWAY, "Server shutdown"));
+                    session.close(CloseReasonUtil.makeSafeCloseReason(CloseReason.CloseCodes.GOING_AWAY, "Server shutdown"));
                 } catch (IOException e) {
                     logger.warn("Failed to close session {}", session.getId(), e);
                 }

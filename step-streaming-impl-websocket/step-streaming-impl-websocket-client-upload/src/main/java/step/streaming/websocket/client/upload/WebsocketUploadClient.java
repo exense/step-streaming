@@ -3,19 +3,23 @@ package step.streaming.websocket.client.upload;
 import jakarta.websocket.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceReference;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
 import step.streaming.data.CheckpointingOutputStream;
 import step.streaming.data.MD5CalculatingOutputStream;
+import step.streaming.websocket.CloseReasonUtil;
 import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.upload.*;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.channels.ClosedChannelException;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 public class WebsocketUploadClient {
@@ -42,6 +46,8 @@ public class WebsocketUploadClient {
     private final CompletableFuture<UploadAcknowledgedMessage> uploadAcknowledgedFuture = new CompletableFuture<>();
     private State state;
     private Remote endpoint;
+    // captured, and used in exception handling for clearer messages
+    private volatile CloseReason closeReason;
     // this is just a (very generous) timeout limit for awaiting responses/events; might be configurable in the future
     private final long timeoutSeconds = 60;
 
@@ -50,11 +56,11 @@ public class WebsocketUploadClient {
         return String.format("{session=%s}", jettySession.getId());
     }
 
-    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession) throws IOException {
+    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession) throws QuotaExceededException, IOException {
         this(endpointUri, uploadSession, ContainerProvider.getWebSocketContainer(), DEFAULT_LOCAL_STATUS_UPDATE_INTERVAL_MS);
     }
 
-    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession, WebSocketContainer container, long localStatusUpdateIntervalMs) throws IOException {
+    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession, WebSocketContainer container, long localStatusUpdateIntervalMs) throws QuotaExceededException, IOException {
         UploadProtocolMessage.initialize();
         this.uploadSession = Objects.requireNonNull(uploadSession);
         uploadSession.onClose(this::onUploadSessionClosed);
@@ -85,11 +91,30 @@ public class WebsocketUploadClient {
         }
     }
 
-    private void sendUploadRequestAndAwaitReply() throws IOException {
+    // Sends text over the websocket and emits more understandable exceptions in case the session was closed
+    // (e.g. by the server refusing to handle an upload because of quota checks)
+    private void sendText(String text) throws IOException {
+        try {
+            jettySession.getBasicRemote().sendText(text);
+        } catch (IOException e) {
+            if (e instanceof ClosedChannelException || e.getCause() instanceof ClosedChannelException) {
+                if (closeReason != null) {
+                    throw new IOException(
+                            "WebSocket closed by server: " + closeReason, e
+                    );
+                } else {
+                    throw new IOException("WebSocket channel closed unexpectedly", e);
+                }
+            }
+            throw e; // some other IOException
+        }
+    }
+
+    private void sendUploadRequestAndAwaitReply() throws QuotaExceededException, IOException {
         StartUploadMessage request = new StartUploadMessage(uploadSession.getMetadata());
         logger.info("{} Starting upload, metadata={}", this, request.metadata);
         state = State.EXPECTING_REFERENCE;
-        jettySession.getBasicRemote().sendText(request.toString());
+        sendText(request.toString());
         try {
             // response is usually immediate, but allow for a little more time (though not unlimited)
             StreamingResourceReference reference = referenceFuture.get(timeoutSeconds, TimeUnit.SECONDS);
@@ -97,6 +122,9 @@ public class WebsocketUploadClient {
             uploadSession.setCurrentStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L, null));
             state = State.UPLOADING;
         } catch (Exception e) {
+            if (e instanceof ExecutionException && e.getCause() instanceof QuotaExceededException) {
+                throw (QuotaExceededException) e.getCause();
+            }
             throw new IOException(e);
         }
     }
@@ -113,7 +141,7 @@ public class WebsocketUploadClient {
 
     private void closeSessionAbnormally(String message, Exception optionalOuterExceptionContext) {
         try {
-            endpoint.closeSession(jettySession, new CloseReason(CloseReason.CloseCodes.UNEXPECTED_CONDITION, message));
+            endpoint.closeSession(jettySession, CloseReasonUtil.makeSafeCloseReason(CloseReason.CloseCodes.UNEXPECTED_CONDITION, message));
         } catch (Exception inner) {
             if (optionalOuterExceptionContext != null) {
                 optionalOuterExceptionContext.addSuppressed(inner);
@@ -135,7 +163,7 @@ public class WebsocketUploadClient {
             outputStream.close();
             String clientChecksum = outputStream.getChecksum();
             logger.debug("{} Data sent: {} bytes, checksum={}", this, bytesSent, clientChecksum);
-            jettySession.getBasicRemote().sendText(new FinishUploadMessage(clientChecksum).toString());
+            sendText(new FinishUploadMessage(clientChecksum).toString());
             state = State.EXPECTING_ACKNOWLEDGE;
             UploadAcknowledgedMessage acknowledgedMessage = uploadAcknowledgedFuture.get(timeoutSeconds, TimeUnit.SECONDS);
             String serverChecksum = acknowledgedMessage.checksum;
@@ -164,7 +192,7 @@ public class WebsocketUploadClient {
     }
 
     private void closeSessionNormally() throws IOException {
-        CloseReason closeReason = new CloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, UploadProtocolMessage.CLOSEREASON_PHRASE_UPLOAD_COMPLETED);
+        CloseReason closeReason = CloseReasonUtil.makeSafeCloseReason(CloseReason.CloseCodes.NORMAL_CLOSURE, UploadProtocolMessage.CLOSEREASON_PHRASE_UPLOAD_COMPLETED);
         logger.debug("About to close session {} with reason: {}", jettySession.getId(), closeReason);
         endpoint.closeSession(jettySession, closeReason);
     }
@@ -175,6 +203,7 @@ public class WebsocketUploadClient {
     }
 
     private void onClose(CloseReason closeReason) {
+        this.closeReason = closeReason;
         if (state == State.FINALIZED) {
             // normal closure
             logger.debug("{} Session closing, reason={}", this, closeReason);
@@ -184,7 +213,11 @@ public class WebsocketUploadClient {
         } else {
             logger.warn("{} Unexpected closure of session, reason={}, currently in state {}", this, closeReason, state);
             // terminate open futures if any
-            IllegalStateException exception = new IllegalStateException("Client closed, reason=" + closeReason + ", but upload was not completed");
+            Exception exception = new IOException("Websocket session closed, reason=" + closeReason + ", but upload was not completed");
+            // special handling of particular exception
+            if (closeReason.getReasonPhrase().startsWith("QuotaExceededException: ")) {
+                exception = new QuotaExceededException(closeReason.getReasonPhrase().substring(24));
+            }
             if (!referenceFuture.isDone()) {
                 referenceFuture.completeExceptionally(exception);
             }

@@ -1,5 +1,6 @@
 package step.streaming.server;
 
+import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceReference;
 import step.streaming.common.StreamingResourceStatus;
@@ -9,12 +10,17 @@ import java.io.InputStream;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
-/** Manager coordinating server-side operations related to streaming resources.
+/**
+ * Manager coordinating server-side operations related to streaming resources.
  * TODO: document.
  */
 public interface StreamingResourceManager {
 
-    String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) throws IOException;
+    default boolean isUploadContextRequired() {
+        return false;
+    }
+
+    String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) throws QuotaExceededException, IOException;
 
     void deleteResource(String resourceId) throws IOException;
 
@@ -35,5 +41,6 @@ public interface StreamingResourceManager {
     StreamingResourceReference getReferenceFor(String resourceId);
 
     Stream<Long> getLinebreakPositions(String resourceId, long startingLinebreakIndex, long count) throws IOException;
+
     Stream<String> getLines(String resourceId, long startingLineIndex, long count) throws IOException;
 }

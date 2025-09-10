@@ -6,6 +6,7 @@ import step.streaming.data.EndOfInputSignal;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.concurrent.ExecutorService;
 
 /**
  * A {@link step.streaming.client.upload.StreamingUploadProvider} that behaves like a real upload provider,
@@ -13,12 +14,8 @@ import java.io.OutputStream;
  */
 public class DiscardingStreamingUploadProvider extends AbstractStreamingUploadProvider {
 
-    public DiscardingStreamingUploadProvider() {
-        this(DEFAULT_CONCURRENT_UPLOAD_POOL_SIZE);
-    }
-
-    public DiscardingStreamingUploadProvider(int uploadPoolSize) {
-        super(uploadPoolSize);
+    public DiscardingStreamingUploadProvider(ExecutorService executorService) {
+        super(executorService);
     }
 
     @Override

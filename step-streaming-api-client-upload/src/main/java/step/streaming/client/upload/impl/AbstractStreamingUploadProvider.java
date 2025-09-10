@@ -2,6 +2,7 @@ package step.streaming.client.upload.impl;
 
 import step.streaming.client.upload.StreamingUploadProvider;
 import step.streaming.client.upload.StreamingUploadSession;
+import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.data.LimitedBufferInputStream;
 import step.streaming.data.EndOfInputSignal;
@@ -18,7 +19,7 @@ import java.util.concurrent.*;
 /**
  * Abstract base class for implementing a {@link StreamingUploadProvider}.
  * <p>
- * This class provides shared logic for initiating live streaming uploads from
+ * This class provides shared logic for initiating live-streaming uploads from
  * either binary or text files. It handles file polling, buffering, optional character
  * set conversion for text content, and the creation of appropriate input stream wrappers.
  * <p>
@@ -41,11 +42,6 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
     public static final int DEFAULT_BUFFER_SIZE = 64;
 
     /**
-     * Default thread pool size used for executing concurrent uploads.
-     */
-    public static final int DEFAULT_CONCURRENT_UPLOAD_POOL_SIZE = 100;
-
-    /**
      * Interval (in milliseconds) between polling operations when reading from a growing file.
      */
     protected long uploadFilePollInterval = DEFAULT_FILE_POLL_INTERVAL_MS;
@@ -63,13 +59,10 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
     /**
      * Creates a new instance with a fixed-size thread pool for concurrent uploads.
      *
-     * @param uploadThreadPoolSize the number of concurrent upload threads to allow.
+     * @param executorService the executor service to use for uploads
      */
-    public AbstractStreamingUploadProvider(int uploadThreadPoolSize) {
-        if (uploadThreadPoolSize <= 0) {
-            throw new IllegalArgumentException("Upload thread pool size must be greater than zero.");
-        }
-        executorService = Executors.newFixedThreadPool(uploadThreadPoolSize);
+    public AbstractStreamingUploadProvider(ExecutorService executorService) {
+        this.executorService = executorService;
     }
 
     /**
@@ -133,10 +126,18 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param fileToStream the binary file to upload.
      * @param metadata     metadata describing the file to upload.
      * @return a {@link StreamingUploadSession} representing the active upload.
+     * @throws QuotaExceededException if the server signals that the upload failed due to quota limitations
+     * @throws NullPointerException if any of the arguments is missing
+     * @throws IllegalArgumentException if an invalid argument combination is provided
      * @throws IOException if the file cannot be read or an error occurs during stream setup.
      */
     @Override
-    public StreamingUploadSession startLiveBinaryFileUpload(File fileToStream, StreamingResourceMetadata metadata) throws IOException {
+    public StreamingUploadSession startLiveBinaryFileUpload(File fileToStream, StreamingResourceMetadata metadata) throws QuotaExceededException, IOException {
+        Objects.requireNonNull(fileToStream, "fileToStream must not be null");
+        Objects.requireNonNull(metadata, "metadata is required");
+        if (metadata.getSupportsLineAccess()) {
+            throw new IllegalArgumentException("metadata indicates line-access support, which is not allowed for binary files. Use startLiveTextFileUpload instead.");
+        }
         return startLiveFileUpload(fileToStream, metadata, null);
     }
 
@@ -147,10 +148,18 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param metadata metadata describing the file to upload.
      * @param charset  the character encoding of the source file.
      * @return a {@link StreamingUploadSession} representing the active upload.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
+     * @throws NullPointerException if any of the arguments is missing
      * @throws IOException if the file cannot be read or an error occurs during stream setup.
      */
     @Override
-    public StreamingUploadSession startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws IOException {
+    public StreamingUploadSession startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws QuotaExceededException, IOException {
+        Objects.requireNonNull(textFile, "textFile is required");
+        Objects.requireNonNull(metadata, "metadata is required");
+        Objects.requireNonNull(charset, "charset is required for text files");
+        // Note: we're not currently forcing users to set the line-access support flag in the metadata. This allows users to directly use this low-level
+        // method to upload a text file (including potential conversion to UTF-8), but without "tagging" the metadata for server-side indexing and processing
+        // as text files, which means that the file would only be downloadable, but not "viewable" line-by-line. Do we want to enforce this instead?
         return startLiveFileUpload(textFile, metadata, charset);
     }
 
@@ -162,9 +171,10 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param metadata           metadata describing the file.
      * @param convertFromCharset if non-null, the character set used to decode the file before converting to UTF-8.
      * @return a {@link StreamingUploadSession} representing the active upload.
-     * @throws IOException if the file cannot be read or the stream cannot be created.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
+     * @throws IOException if the file cannot be read or the stream cannot be created
      */
-    protected StreamingUploadSession startLiveFileUpload(File fileToStream, StreamingResourceMetadata metadata, Charset convertFromCharset) throws IOException {
+    protected StreamingUploadSession startLiveFileUpload(File fileToStream, StreamingResourceMetadata metadata, Charset convertFromCharset) throws QuotaExceededException, IOException {
         if (!admissionSemaphore.tryAcquire()) {
             throw new IOException("Upload provider is closed, not accepting new uploads");
         }
@@ -196,12 +206,13 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param sourceInputStream the input stream representing the upload content.
      * @param metadata          the metadata describing the resource.
      * @param endOfInputSignal  the signal used to detect upload completion or cancellation.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
      * @return a {@link StreamingUploadSession} representing the active upload.
      * @throws IOException if the stream setup or transfer initiation fails.
      */
     protected abstract StreamingUploadSession startLiveFileUpload(InputStream sourceInputStream,
                                                                   StreamingResourceMetadata metadata,
-                                                                  EndOfInputSignal endOfInputSignal) throws IOException;
+                                                                  EndOfInputSignal endOfInputSignal) throws QuotaExceededException, IOException;
 
     @Override
     public void close() {

@@ -12,13 +12,14 @@ import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
 
 public class LocalDirectoryBackedStreamingUploadProvider extends AbstractStreamingUploadProvider {
     private static final DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("uuuuMMdd_HHmmss");
     private final File localDirectory;
 
-    public LocalDirectoryBackedStreamingUploadProvider(File localDirectory) {
-        super(DEFAULT_CONCURRENT_UPLOAD_POOL_SIZE);
+    public LocalDirectoryBackedStreamingUploadProvider(ExecutorService executorService, File localDirectory) {
+        super(executorService);
         this.localDirectory = localDirectory;
         if (!localDirectory.isDirectory() || !localDirectory.canWrite()) {
             throw new RuntimeException("Directory does not exist or is not writable: " + localDirectory.getAbsolutePath());

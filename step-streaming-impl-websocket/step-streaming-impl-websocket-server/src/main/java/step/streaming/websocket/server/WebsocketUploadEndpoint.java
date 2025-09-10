@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import step.streaming.common.*;
 import step.streaming.data.MD5CalculatingInputStream;
 import step.streaming.server.StreamingResourceManager;
+import step.streaming.websocket.CloseReasonUtil;
 import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.upload.*;
 
@@ -47,14 +48,31 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     @Override
     public void onOpen(Session session, EndpointConfig config) {
         this.session = session;
-        Optional.ofNullable(sessionsHandler).ifPresent(handler -> handler.register(session));
         session.getRequestParameterMap()
                 .getOrDefault(StreamingResourceUploadContext.PARAMETER_NAME, List.of())
                 .stream().findFirst().ifPresent(ctx -> uploadContextId = ctx);
+        if (manager.isUploadContextRequired() && uploadContextId == null) {
+            closeSession(session, CloseReasonUtil.makeSafeCloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, "Missing parameter " + StreamingResourceUploadContext.PARAMETER_NAME));
+            return;
+        }
+        Optional.ofNullable(sessionsHandler).ifPresent(handler -> handler.register(session));
         state = State.EXPECTING_METADATA;
         session.addMessageHandler(String.class, this::onMessage);
         session.addMessageHandler(InputStream.class, this::onData);
         logger.debug("Session opened: {}", session.getId());
+    }
+
+    private void closeSession(Exception exception) {
+        // because of some limitations, the QuotaExceededException might be wrapped inside an IOException
+        if (exception instanceof IOException && exception.getCause() instanceof QuotaExceededException) {
+            exception = (QuotaExceededException) exception.getCause();
+        }
+        if (exception instanceof QuotaExceededException) {
+            // this one is handled specially by the client
+            closeSession(session, CloseReasonUtil.makeSafeCloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, "QuotaExceededException: " + exception.getMessage()));
+        } else {
+            closeSession(session, CloseReasonUtil.makeSafeCloseReason(CloseReason.CloseCodes.UNEXPECTED_CONDITION, exception.getMessage()));
+        }
     }
 
     private void onMessage(String messageString) {
@@ -71,9 +89,8 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 state = State.UPLOADING;
                 ReadyForUploadMessage reply = new ReadyForUploadMessage(reference);
                 session.getBasicRemote().sendText(reply.toString());
-            } catch (IOException e) {
-                // this will implicitly activate error handling, close the session etc.
-                throw new RuntimeException(e);
+            } catch (IOException | QuotaExceededException e) {
+                closeSession(e);
             }
         } else if (state == State.EXPECTING_FINISHEDMESSAGE && clientMessage instanceof FinishUploadMessage) {
             FinishUploadMessage finishMessage = (FinishUploadMessage) clientMessage;
@@ -113,8 +130,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             state = State.EXPECTING_FINISHEDMESSAGE;
             uploadAcknowledgedMessage = new UploadAcknowledgedMessage(bytesWritten, status.getNumberOfLines(), checksum);
         } catch (IOException e) {
-            logger.error("Error while uploading data", e);
-            throw new RuntimeException(e);
+            closeSession(e);
         }
     }
 
@@ -134,7 +150,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 manager.markFailed(resourceId);
             }
         } else {
-            logger.warn("Incomplete session (no resource ID) closed: session={}, state={}", session.getId(), state);
+            logger.warn("Incomplete session (no resource ID) closed: session={}, state={}, reason={}", session.getId(), state, closeReason);
         }
     }
 
