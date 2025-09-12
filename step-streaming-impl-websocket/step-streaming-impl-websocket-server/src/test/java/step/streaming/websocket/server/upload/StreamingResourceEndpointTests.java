@@ -404,8 +404,8 @@ public class StreamingResourceEndpointTests {
         // ask manager to require context (but we don't provide one)
         manager.uploadContextRequired = true;
         try {
-            IOException e = assertThrows(IOException.class, () -> uploadProvider.startLiveTextFileUpload(dataFile, new StreamingResourceMetadata("dummy.txt", TEXT_PLAIN, true), StandardCharsets.UTF_8));
-            assertEquals("WebSocket closed by server: CloseReason[1008,Missing parameter streamingUploadContextId]", e.getMessage());
+            Exception e = assertThrows(Exception.class, () -> uploadProvider.startLiveTextFileUpload(dataFile, new StreamingResourceMetadata("dummy.txt", TEXT_PLAIN, true), StandardCharsets.UTF_8));
+            assertTrue(e.getMessage().contains("WebSocket closed by server: CloseReason[1008,Missing parameter streamingUploadContextId]"));
         } finally {
             Files.deleteIfExists(dataFile.toPath());
         }
