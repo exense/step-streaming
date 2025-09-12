@@ -18,6 +18,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import static org.junit.Assert.*;
@@ -35,7 +37,8 @@ public class DefaultStreamingResourceManagerTest {
         catalogBackend = new InMemoryCatalogBackend();
         manager = new DefaultStreamingResourceManager(catalogBackend, storageBackend,
                 s -> null,
-                null
+                null,
+                Executors.newFixedThreadPool(2)
         );
     }
 

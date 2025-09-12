@@ -7,6 +7,7 @@ import step.streaming.common.StreamingResourceStatus;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -19,6 +20,8 @@ public interface StreamingResourceManager {
     default boolean isUploadContextRequired() {
         return false;
     }
+
+    ExecutorService getUploadsThreadPool();
 
     String registerNewResource(StreamingResourceMetadata metadata, String uploadContextId) throws QuotaExceededException, IOException;
 

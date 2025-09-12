@@ -11,6 +11,7 @@ import step.streaming.util.ExceptionsUtil;
 import step.streaming.util.ThrowingConsumer;
 
 import java.io.IOException;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Function;
 
 public class TestingResourceManager extends DefaultStreamingResourceManager {
@@ -18,8 +19,8 @@ public class TestingResourceManager extends DefaultStreamingResourceManager {
     public ThrowingConsumer<Long> sizeChecker = null;
     public QuotaExceededException quotaExceededException = null;
 
-    public TestingResourceManager(StreamingResourcesCatalogBackend catalog, StreamingResourcesStorageBackend storage, Function<String, StreamingResourceReference> referenceProducerFunction, StreamingResourceUploadContexts uploadContexts) {
-        super(catalog, storage, referenceProducerFunction, uploadContexts);
+    public TestingResourceManager(StreamingResourcesCatalogBackend catalog, StreamingResourcesStorageBackend storage, Function<String, StreamingResourceReference> referenceProducerFunction, StreamingResourceUploadContexts uploadContexts, ExecutorService uploadsPool) {
+        super(catalog, storage, referenceProducerFunction, uploadContexts, uploadsPool);
     }
 
     @Override

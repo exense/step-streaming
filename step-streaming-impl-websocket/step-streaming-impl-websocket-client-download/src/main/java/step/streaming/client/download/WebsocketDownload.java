@@ -12,6 +12,7 @@ import step.streaming.data.TrackablePipedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PipedOutputStream;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -35,6 +36,9 @@ public class WebsocketDownload extends AbstractStreamingTransfer implements Stre
     private final AtomicReference<TrackablePipedInputStream> activeChunkStream = new AtomicReference<>();
     private final AtomicReference<ChunkAwareInputStream> activeFullInputStream = new AtomicReference<>();
     private final AtomicReference<CompletableFuture<AtomicReference<StreamingResourceStatus>>> statusAwaitingFutureRef = new AtomicReference<>();
+
+    // last status we have already signalled to any waiter (to avoid redundant wakeups)
+    private final AtomicReference<StreamingResourceStatus> lastSignalledStatus = new AtomicReference<>();
 
     /**
      * Constructs a new {@code WebsocketDownload} for the given resource reference.
@@ -68,14 +72,18 @@ public class WebsocketDownload extends AbstractStreamingTransfer implements Stre
          block there -- and here too, to avoid writing during that time.
          */
         synchronized (statusAwaitingFutureRef) {
-            if (statusAwaitingFutureRef.get() != null) {
-                var future = statusAwaitingFutureRef.get();
-                if (!future.isDone()) {
-                    future.complete(new AtomicReference<>(status));
+            CompletableFuture<AtomicReference<StreamingResourceStatus>> waiting = statusAwaitingFutureRef.get();
+            if (waiting != null) {
+                if (!waiting.isDone()) {
+                    logger.debug("Setting status waiter to {}", status);
+                    waiting.complete(new AtomicReference<>(status));
                 } else {
-                    // join() will return immediately as the future is already completed, we're simply updating the value
-                    future.join().set(status);
+                    logger.trace("Updating status waiter to {}", status);
+                    // future already completed: update the reference it carries
+                    waiting.join().set(status);
                 }
+            } else {
+                logger.debug("No waiting status reference to update");
             }
         }
     }
@@ -87,7 +95,6 @@ public class WebsocketDownload extends AbstractStreamingTransfer implements Stre
 
     private void onClientClose() {
         logger.debug("Websocket client was closed");
-        // if anything abnormal happened, there should have been exceptions propagating, but just in case
         var future = statusAwaitingFutureRef.get();
         if (future != null && !future.isDone()) {
             future.completeExceptionally(new IllegalStateException("Websocket client was closed"));
@@ -131,6 +138,7 @@ public class WebsocketDownload extends AbstractStreamingTransfer implements Stre
         try {
             logger.debug("Requesting chunk stream for [{}, {}]", startOffset, endOffset);
             CompletableFuture<Long> consumed = client.requestChunkTransfer(startOffset, endOffset, pipedOutputStream);
+            logger.debug("Waiting for bytes...");
             consumed.whenComplete((res, ex) -> {
                 if (ex != null) {
                     logger.error("Error during chunk transfer", ex);
@@ -214,30 +222,38 @@ public class WebsocketDownload extends AbstractStreamingTransfer implements Stre
             return getStreamForStatus(status);
         }
 
+        /**
+         * Iteratively determine what to do next (no recursion to avoid StackOverflowError).
+         */
         private TrackablePipedInputStream getStreamForStatus(StreamingResourceStatus status) throws IOException {
-            if (status.getCurrentSize() > bytesRead) {
-                return getChunkStream(bytesRead, status.getCurrentSize());
-            }
-            if (status.getTransferStatus() == StreamingResourceTransferStatus.COMPLETED || status.getTransferStatus() == StreamingResourceTransferStatus.FAILED) {
-                logger.debug("Transfer status is {} and all bytes were received, signaling end of data", status.getTransferStatus());
-                return null; // normal EOF, no more streams required
-            }
-            try {
-                logger.debug("Current chunk stream is exhausted, waiting for new status update (last known status={})", status);
-                // See the comment in setCurrentStatus for a detailed explanation of the flow, and the rationale.
-                StreamingResourceStatus newStatus;
-                // Wait for future to complete.
-                AtomicReference<StreamingResourceStatus> newStatusReference = statusAwaitingFutureRef.get().get();
-                // synchronized in order to briefly block possible new updates
-                synchronized (statusAwaitingFutureRef) {
-                    newStatus = newStatusReference.get();
-                    // install a new future to be completed next.
-                    statusAwaitingFutureRef.set(new CompletableFuture<>());
+            while (true) {
+                logger.debug("Getting stream for status [{}]", status);
+                if (status.getCurrentSize() > bytesRead) {
+                    logger.debug("status indicates new bytes are available");
+                    return getChunkStream(bytesRead, status.getCurrentSize());
                 }
-                logger.debug("New status received: {}", newStatus);
-                return getStreamForStatus(newStatus);
-            } catch (Exception e) {
-                throw new IOException(e);
+                if (status.getTransferStatus() == StreamingResourceTransferStatus.COMPLETED
+                        || status.getTransferStatus() == StreamingResourceTransferStatus.FAILED) {
+                    logger.debug("Transfer status is {} and all bytes were received, signaling end of data",
+                            status.getTransferStatus());
+                    return null; // normal EOF
+                }
+
+                try {
+                    logger.debug("Current chunk exhausted, waiting for new status update (last known status={})", status);
+                    // Wait for future to complete with a (possibly updated) status reference.
+                    AtomicReference<StreamingResourceStatus> newStatusRef = statusAwaitingFutureRef.get().get();
+                    StreamingResourceStatus newStatus;
+                    // Install a new future for the next round and read the status obtained.
+                    synchronized (statusAwaitingFutureRef) {
+                        newStatus = newStatusRef.get();
+                        statusAwaitingFutureRef.set(new CompletableFuture<>());
+                    }
+                    logger.debug("New status received: {}", newStatus);
+                    status = newStatus; // loop continues
+                } catch (Exception e) {
+                    throw new IOException(e);
+                }
             }
         }
 

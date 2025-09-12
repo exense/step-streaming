@@ -12,6 +12,8 @@ import java.io.UncheckedIOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -27,6 +29,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     protected final StreamingResourcesStorageBackend storage;
     protected final StreamingResourceUploadContexts uploadContexts;
     protected final Function<String, StreamingResourceReference> referenceProducerFunction;
+    protected final ExecutorService uploadsThreadPool;
 
     // Listeners interested in a single resource (e.g. download clients). Listeners interested in an entire context will use the respective methods in the uploadContexts instead.
     protected final Map<String, CopyOnWriteArrayList<Consumer<StreamingResourceStatus>>> statusListeners = new ConcurrentHashMap<>();
@@ -34,12 +37,20 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     public DefaultStreamingResourceManager(StreamingResourcesCatalogBackend catalog,
                                            StreamingResourcesStorageBackend storage,
                                            Function<String, StreamingResourceReference> referenceProducerFunction,
-                                           StreamingResourceUploadContexts uploadContexts
+                                           StreamingResourceUploadContexts uploadContexts,
+                                           ExecutorService uploadsThreadPool
+
     ) {
         this.catalog = Objects.requireNonNull(catalog);
         this.storage = Objects.requireNonNull(storage);
         this.referenceProducerFunction = Objects.requireNonNull(referenceProducerFunction);
         this.uploadContexts = uploadContexts;
+        this.uploadsThreadPool = uploadsThreadPool;
+    }
+
+    @Override
+    public ExecutorService getUploadsThreadPool() {
+        return uploadsThreadPool;
     }
 
     @Override
@@ -87,9 +98,11 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     @Override
     public long writeChunk(String resourceId, InputStream input) throws IOException {
         try {
+            long sizeBeforeChunk = storage.getCurrentSize(resourceId);
             AtomicReference<Long> linebreakCount = new AtomicReference<>();
             ThrowingConsumer<Long> linebreakCountListener = linebreakCount::set;
-            ThrowingConsumer<Long> sizeListener = updatedSize -> {
+            ThrowingConsumer<Long> sizeListener = chunkSize -> {
+                long updatedSize = sizeBeforeChunk + chunkSize;
                 onSizeChanged(resourceId, updatedSize);
                 StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(
                         StreamingResourceTransferStatus.IN_PROGRESS, updatedSize, linebreakCount.get()
