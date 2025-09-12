@@ -35,4 +35,13 @@ public class StreamingResourceStatusUpdate {
         }
         return result;
     }
+
+    @Override
+    public String toString() {
+        return "StreamingResourceStatusUpdate{" +
+                "transferStatus=" + transferStatus +
+                ", currentSize=" + currentSize +
+                ", numberOfLines=" + numberOfLines +
+                '}';
+    }
 }
