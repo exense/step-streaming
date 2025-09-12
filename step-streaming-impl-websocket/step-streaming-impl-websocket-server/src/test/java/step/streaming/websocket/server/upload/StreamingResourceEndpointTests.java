@@ -6,7 +6,10 @@ import jakarta.websocket.server.ServerEndpointConfig;
 import org.eclipse.jetty.util.component.LifeCycle;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestRule;
+import org.junit.runners.model.Statement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.client.download.WebsocketDownload;
@@ -46,12 +49,29 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static org.junit.Assert.*;
 import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.APPLICATION_OCTET_STREAM;
 import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN;
 
 public class StreamingResourceEndpointTests {
+
+    // aaaaaaargh... surefire consistently messes up these tests because it parallelizes them!
+    private static final Lock CLASS_LOCK = new ReentrantLock();
+    @Rule
+    public final TestRule serializeMethods = (base, description) -> new Statement() {
+        @Override public void evaluate() throws Throwable {
+            CLASS_LOCK.lock();
+            try {
+                base.evaluate(); // run the test method
+            } finally {
+                CLASS_LOCK.unlock();
+            }
+        }
+    };
+
     private static final Logger logger = LoggerFactory.getLogger("UNITTEST");
     private final WebSocketContainer wsContainer = ContainerProvider.getWebSocketContainer();
     private TestingStorageBackend storageBackend;
