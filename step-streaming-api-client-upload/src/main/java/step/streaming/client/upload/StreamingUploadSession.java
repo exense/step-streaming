@@ -76,7 +76,7 @@ public interface StreamingUploadSession extends StreamingTransfer {
      * @param optionalCause the reason for cancellation, or {@code null} to use
      *                      a default {@link CancellationException}.
      */
-    default void cancel(Exception optionalCause) {
+    default void cancel(Throwable optionalCause) {
         getEndOfInputSignal().completeExceptionally(optionalCause != null ? optionalCause : new CancellationException("Cancelled by user"));
     }
 

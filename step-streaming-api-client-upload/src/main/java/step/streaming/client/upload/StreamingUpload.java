@@ -117,11 +117,11 @@ public class StreamingUpload {
      * Cancels the upload, providing a specific cause for the cancellation.
      * <p>
      * This will signal an exceptional completion to the underlying upload session
-     * via {@link StreamingUploadSession#cancel(Exception)}.
+     * via {@link StreamingUploadSession#cancel(Throwable)}.
      *
      * @param cause the exception that describes the reason for cancellation; must not be null
      */
-    public void cancel(Exception cause) {
+    public void cancel(Throwable cause) {
         session.cancel(Objects.requireNonNull(cause));
     }
 
@@ -131,7 +131,7 @@ public class StreamingUpload {
      * The implementation will internally use a
      * {@link java.util.concurrent.CancellationException} with the message
      * {@code "Cancelled by user"}.
-     * @see #cancel(Exception)
+     * @see #cancel(Throwable)
      */
     public void cancel() {
         session.cancel(null);

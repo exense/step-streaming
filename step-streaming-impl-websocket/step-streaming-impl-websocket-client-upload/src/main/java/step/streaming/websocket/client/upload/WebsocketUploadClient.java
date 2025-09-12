@@ -56,11 +56,11 @@ public class WebsocketUploadClient {
         return String.format("{session=%s}", jettySession.getId());
     }
 
-    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession) throws QuotaExceededException, IOException {
-        this(endpointUri, uploadSession, ContainerProvider.getWebSocketContainer(), DEFAULT_LOCAL_STATUS_UPDATE_INTERVAL_MS);
+    public WebsocketUploadClient(WebSocketContainer container, URI endpointUri, WebsocketUploadSession uploadSession) throws QuotaExceededException, IOException {
+        this(container, endpointUri, uploadSession, DEFAULT_LOCAL_STATUS_UPDATE_INTERVAL_MS);
     }
 
-    public WebsocketUploadClient(URI endpointUri, WebsocketUploadSession uploadSession, WebSocketContainer container, long localStatusUpdateIntervalMs) throws QuotaExceededException, IOException {
+    public WebsocketUploadClient(WebSocketContainer container, URI endpointUri, WebsocketUploadSession uploadSession, long localStatusUpdateIntervalMs) throws QuotaExceededException, IOException {
         UploadProtocolMessage.initialize();
         this.uploadSession = Objects.requireNonNull(uploadSession);
         uploadSession.onClose(this::onUploadSessionClosed);

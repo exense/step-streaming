@@ -7,6 +7,7 @@ import step.streaming.data.EndOfInputSignal;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * A {@link step.streaming.client.upload.StreamingUploadProvider} that behaves like a real upload provider,
@@ -14,8 +15,8 @@ import java.util.concurrent.ExecutorService;
  */
 public class DiscardingStreamingUploadProvider extends AbstractStreamingUploadProvider {
 
-    public DiscardingStreamingUploadProvider(ExecutorService executorService) {
-        super(executorService);
+    public DiscardingStreamingUploadProvider() {
+        super(Executors.newFixedThreadPool(4));
     }
 
     @Override
@@ -23,5 +24,11 @@ public class DiscardingStreamingUploadProvider extends AbstractStreamingUploadPr
         LocalStreamingUploadSession session = new LocalStreamingUploadSession(sourceInputStream, OutputStream.nullOutputStream(), metadata, endOfInputSignal);
         executorService.submit(session::transfer);
         return session;
+    }
+
+    @Override
+    public void close() {
+        executorService.shutdownNow();
+        super.close();
     }
 }

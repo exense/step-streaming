@@ -1,6 +1,9 @@
 package step.streaming.websocket.server.upload;
 
+import jakarta.websocket.ContainerProvider;
+import jakarta.websocket.WebSocketContainer;
 import jakarta.websocket.server.ServerEndpointConfig;
+import org.eclipse.jetty.util.component.LifeCycle;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -50,6 +53,7 @@ import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.TE
 
 public class StreamingResourceEndpointTests {
     private static final Logger logger = LoggerFactory.getLogger("UNITTEST");
+    private WebSocketContainer wsContainer;
     private TestingStorageBackend storageBackend;
     private InMemoryCatalogBackend catalogBackend;
     private TestingResourceManager manager;
@@ -64,6 +68,7 @@ public class StreamingResourceEndpointTests {
 
     @Before
     public void setUp() throws Exception {
+        wsContainer = ContainerProvider.getWebSocketContainer();
         sessionsHandler = new DefaultWebsocketServerEndpointSessionsHandler();
         storageBackend = new TestingStorageBackend(1000L, false);
         catalogBackend = new InMemoryCatalogBackend();
@@ -81,6 +86,7 @@ public class StreamingResourceEndpointTests {
     public void tearDown() throws Exception {
         Thread.sleep(100);
         sessionsHandler.shutdown();
+        ((LifeCycle) wsContainer).stop();
         server.stop();
         storageBackend.cleanup();
     }
@@ -114,7 +120,7 @@ public class StreamingResourceEndpointTests {
         WebsocketUploadSession upload = new WebsocketUploadSession(metadata, new EndOfInputSignal());
         // TODO: timeout
         //WebsocketUploadClient uploadClient = new WebsocketUploadClient(uploadUri, upload, ContainerProvider.getWebSocketContainer(), 200, 10);
-        WebsocketUploadClient uploadClient = new WebsocketUploadClient(uploadUri, upload);
+        WebsocketUploadClient uploadClient = new WebsocketUploadClient(wsContainer, uploadUri, upload);
         InputStream data = new TricklingRandomBytesInputStream(DATA_SIZE, 5, TimeUnit.SECONDS);
 
         WebsocketDownloadClient downloadClient = new WebsocketDownloadClient(upload.getReference().getUri());
@@ -184,7 +190,7 @@ public class StreamingResourceEndpointTests {
         long DATA_SIZE = 200_000_000L;
         RandomBytesProducer randomBytesProducer = new RandomBytesProducer(DATA_SIZE, 5, TimeUnit.SECONDS);
 
-        WebsocketUploadProvider provider = new WebsocketUploadProvider(executor, uploadUri);
+        WebsocketUploadProvider provider = new WebsocketUploadProvider(wsContainer, executor, uploadUri);
         StreamingUploadSession upload = provider.startLiveBinaryFileUpload(randomBytesProducer.file, new StreamingResourceMetadata("test.bin", APPLICATION_OCTET_STREAM, false));
         WebsocketDownload download = new WebsocketDownload(upload.getReference());
         AtomicReference<String> downloadChecksum = new AtomicReference<>();
@@ -228,7 +234,7 @@ public class StreamingResourceEndpointTests {
         Long OUTPUT_LINES = 296L;
         FileBytesProducer isoBytesProducer = new FileBytesProducer(sourceFile, 5, TimeUnit.SECONDS);
 
-        WebsocketUploadProvider provider = new WebsocketUploadProvider(executor, uploadUri);
+        WebsocketUploadProvider provider = new WebsocketUploadProvider(wsContainer, executor, uploadUri);
         // This will transcode the file to UTF-8 on upload (on the fly)
         StreamingUploadSession upload = provider.startLiveTextFileUpload(isoBytesProducer.file, new StreamingResourceMetadata("faust.txt", TEXT_PLAIN, true), StandardCharsets.ISO_8859_1);
         WebsocketDownload download = new WebsocketDownload(upload.getReference());
@@ -275,7 +281,7 @@ public class StreamingResourceEndpointTests {
         File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
         FileBytesProducer uploadProducer = new FileBytesProducer(sourceFile, 15, TimeUnit.SECONDS);
 
-        WebsocketUploadProvider provider = new WebsocketUploadProvider(executor, uploadUri);
+        WebsocketUploadProvider provider = new WebsocketUploadProvider(wsContainer, executor, uploadUri);
         StreamingUploadSession upload = provider.startLiveTextFileUpload(uploadProducer.file, new StreamingResourceMetadata("faust.txt", TEXT_PLAIN, true), StandardCharsets.ISO_8859_1);
         Thread producerThread = new Thread(() -> {
             try {
@@ -298,7 +304,7 @@ public class StreamingResourceEndpointTests {
         File sourceFile = new File(Thread.currentThread().getContextClassLoader().getResource("Faust-8859-1.txt").toURI());
         FileBytesProducer uploadProducer = new FileBytesProducer(sourceFile, 15, TimeUnit.SECONDS);
 
-        WebsocketUploadProvider provider = new WebsocketUploadProvider(executor, uploadUri);
+        WebsocketUploadProvider provider = new WebsocketUploadProvider(wsContainer, executor, uploadUri);
         StreamingUploadSession upload = provider.startLiveTextFileUpload(uploadProducer.file, new StreamingResourceMetadata("faust.txt", TEXT_PLAIN, true), StandardCharsets.ISO_8859_1);
 
         WebsocketDownloadClient downloadClient = new WebsocketDownloadClient(upload.getReference().getUri());
@@ -358,7 +364,7 @@ public class StreamingResourceEndpointTests {
 
     @Test
     public void testFailedDownload() throws Exception {
-        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(executor, uploadUri);
+        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(wsContainer, executor, uploadUri);
 
         testFailedDownloadWithInput(uploadProvider, "Failing");
         testFailedDownloadWithInput(uploadProvider, "Failing\n");
@@ -394,7 +400,7 @@ public class StreamingResourceEndpointTests {
     @Test
     public void testUploadErrorContextRequired() throws Exception {
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
-        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(executor, uploadUri);
+        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(wsContainer, executor, uploadUri);
         // ask manager to require context (but we don't provide one)
         manager.uploadContextRequired = true;
         try {
@@ -408,7 +414,7 @@ public class StreamingResourceEndpointTests {
     @Test
     public void testUploadErrorQuotaExceeded() throws Exception {
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
-        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(executor, uploadUri);
+        WebsocketUploadProvider uploadProvider = new WebsocketUploadProvider(wsContainer, executor, uploadUri);
         manager.quotaExceededException = new QuotaExceededException("oops!");
         try {
             QuotaExceededException e = assertThrows(QuotaExceededException.class, () -> uploadProvider.startLiveTextFileUpload(dataFile, new StreamingResourceMetadata("dummy.txt", TEXT_PLAIN, true), StandardCharsets.UTF_8));
@@ -421,7 +427,7 @@ public class StreamingResourceEndpointTests {
     @Test
     public void testSizeRestrictionCallback() throws Exception {
         File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
-        StreamingUploads uploads = new StreamingUploads(new WebsocketUploadProvider(executor, uploadUri));
+        StreamingUploads uploads = new StreamingUploads(new WebsocketUploadProvider(wsContainer, executor, uploadUri));
         try {
             StreamingUpload upload = uploads.startTextFileUpload(dataFile);
             manager.sizeChecker = value -> {

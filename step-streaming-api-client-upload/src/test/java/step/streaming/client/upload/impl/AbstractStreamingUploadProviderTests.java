@@ -26,7 +26,7 @@ public class AbstractStreamingUploadProviderTests {
     public void testIllegalArguments() throws Exception {
         File dummyFile = Files.createTempFile("streaming-tests", ".bin").toFile();
         try {
-            StreamingUploadProvider provider = new DiscardingStreamingUploadProvider(Executors.newSingleThreadExecutor());
+            StreamingUploadProvider provider = new DiscardingStreamingUploadProvider();
             var metadata = new StreamingResourceMetadata("file.bin", StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN, true);
             Exception e = Assert.assertThrows(NullPointerException.class, () -> provider.startLiveTextFileUpload(dummyFile, metadata, null));
             Assert.assertEquals("charset is required for text files", e.getMessage());
@@ -46,7 +46,7 @@ public class AbstractStreamingUploadProviderTests {
         // 1. upload start initiated, 2. close initiated, 3. upload start ending
         // The implementation is much simpler than the test ;-)
         CompletableFuture<Void> uploadStarted = new CompletableFuture<>();
-        StreamingUploads uploads = new StreamingUploads(new DiscardingStreamingUploadProvider(Executors.newSingleThreadExecutor()) {
+        StreamingUploads uploads = new StreamingUploads(new DiscardingStreamingUploadProvider() {
             @Override
             protected LocalStreamingUploadSession startLiveFileUpload(InputStream sourceInputStream,
                                                                       StreamingResourceMetadata metadata,
