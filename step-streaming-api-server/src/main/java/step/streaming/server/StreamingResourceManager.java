@@ -27,7 +27,7 @@ public interface StreamingResourceManager {
 
     void deleteResource(String resourceId) throws IOException;
 
-    long writeChunk(String resourceId, InputStream input) throws IOException;
+    long writeChunk(String resourceId, InputStream input, boolean isFinal) throws IOException;
 
     void markCompleted(String resourceId);
 

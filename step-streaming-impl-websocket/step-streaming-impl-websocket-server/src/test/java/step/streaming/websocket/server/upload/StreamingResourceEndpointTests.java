@@ -56,7 +56,8 @@ public class StreamingResourceEndpointTests {
     private static final Lock CLASS_LOCK = new ReentrantLock();
     @Rule
     public final TestRule serializeMethods = (base, description) -> new Statement() {
-        @Override public void evaluate() throws Throwable {
+        @Override
+        public void evaluate() throws Throwable {
             CLASS_LOCK.lock();
             try {
                 base.evaluate(); // run the test method
@@ -125,7 +126,7 @@ public class StreamingResourceEndpointTests {
         sessionsHandler.shutdown();
         clientsExecutor.shutdownNow();
         serverExecutor.shutdownNow();
-        ((LifeCycle)wsContainer).stop();
+        ((LifeCycle) wsContainer).stop();
         server.stop();
         storageBackend.cleanup();
     }
@@ -156,9 +157,9 @@ public class StreamingResourceEndpointTests {
     @Ignore
     // for repeatedly running a particular test
     public void adNauseam() throws Exception {
-        for (int i=0; i < 100; ++i) {
-            testHighLevelUploadWithSimultaneousDownloadsRandomData();
-            Thread.sleep(1000);
+        for (int i = 0; i < 100; ++i) {
+            testLineBasedDownload();
+            Thread.sleep(3000);
         }
     }
 
@@ -367,13 +368,16 @@ public class StreamingResourceEndpointTests {
             downloadClient.registerStatusListener(serverSideStatus -> {
                 status.set(serverSideStatus);
                 long linesToFetch = status.get().getNumberOfLines() - linesReceived.get();
+                logger.info("status received: {}, linesReceived={} => linesToFetch={}", status.get(), linesReceived.get(), linesToFetch);
                 if (status.get().getTransferStatus().equals(StreamingResourceTransferStatus.FAILED)) {
                     completed.completeExceptionally(new IllegalStateException("" + StreamingResourceTransferStatus.FAILED));
                 }
                 if (linesToFetch > 0) {
                     try {
+                        logger.info("Calling requestTextLines({},{},...)", linesReceived.get(), linesToFetch);
                         downloadClient.requestTextLines(linesReceived.get(), linesToFetch, lines -> {
                             linesReceived.addAndGet(lines.size());
+                            logger.info("Received {} lines -> {}", lines.size(), linesReceived.get());
                             for (String line : lines) {
                                 try {
                                     md5Out.write(line.getBytes(StandardCharsets.UTF_8));
@@ -381,11 +385,17 @@ public class StreamingResourceEndpointTests {
                                     throw new RuntimeException(e);
                                 }
                             }
+                            var ns = status.get();
+                            if (ns.getTransferStatus().equals(StreamingResourceTransferStatus.COMPLETED) && ns.getNumberOfLines() == linesReceived.get()) {
+                                logger.info("Status is completed(2), finishing");
+                                completed.complete(true);
+                            }
                         });
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
                 } else if (status.get().getTransferStatus().equals(StreamingResourceTransferStatus.COMPLETED)) {
+                    logger.info("Status is completed(1), finishing");
                     completed.complete(true);
                 }
             });

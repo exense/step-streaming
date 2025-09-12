@@ -7,12 +7,12 @@ import jakarta.websocket.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.*;
-import step.streaming.data.MD5CalculatingInputStream;
 import step.streaming.server.StreamingResourceManager;
 import step.streaming.websocket.CloseReasonUtil;
 import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.upload.*;
 
+import java.io.ByteArrayInputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -20,6 +20,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 
 public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
@@ -236,12 +237,9 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     // Code below is mostly AI-generated (but manually reviewed and slightly adapted)
 
     /**
-     * Turns queued byte[] chunks into an InputStream, then calls the existing manager.writeChunk(...)
-     * on a background thread. When done, completes with UploadAcknowledgedMessage (bytes, lines, md5).
-     */
-    /**
      * Cooperatively drains queued byte[] chunks to storage without monopolizing a thread.
-     * Keeps the external API the same as before.
+     * Calls manager.writeChunk(resourceId, in, isFinal) and sets isFinal=true exactly once,
+     * on the last write for this upload (including the 0-byte case).
      */
     private static final class UploadPipeline {
         private static final int PER_UPLOAD_QUEUE_CAPACITY = 128;
@@ -250,7 +248,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         private final String resourceId;
         private final ExecutorService uploadsPool;
         private final BlockingQueue<byte[]> queue = new ArrayBlockingQueue<>(PER_UPLOAD_QUEUE_CAPACITY);
-        private final java.util.concurrent.atomic.AtomicBoolean draining = new java.util.concurrent.atomic.AtomicBoolean(false);
+        private final AtomicBoolean draining = new AtomicBoolean(false);
 
         private volatile boolean closed;
 
@@ -258,6 +256,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         private StreamingResourceManager manager;
         private java.security.MessageDigest md; // MD5 over all bytes
         private long bytesWritten;              // total bytes written (sum of chunk sizes)
+        private boolean finalSent;              // true once we've sent isFinal=true
         private CompletableFuture<UploadAcknowledgedMessage> ackFuture;
 
         UploadPipeline(String resourceId, ExecutorService uploadsPool) {
@@ -267,9 +266,8 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
 
         /** Enqueue a chunk. A brief block here only affects this connection’s handler invocation. */
         void put(byte[] chunk) throws InterruptedException {
-            // Try to avoid long blocking of Jetty worker threads.
             if (!queue.offer(chunk)) {
-                queue.put(chunk); // fallback: bounded backpressure
+                queue.put(chunk); // bounded backpressure
             }
             scheduleDrain();
         }
@@ -289,11 +287,9 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             try {
                 this.md = java.security.MessageDigest.getInstance("MD5");
             } catch (java.security.NoSuchAlgorithmException e) {
-                // MD5 is guaranteed to exist on the JDK; rethrow if somehow unavailable
                 throw new IllegalStateException("MD5 not available", e);
             }
             this.ackFuture = new CompletableFuture<>();
-            // Kick off (if there is work); further puts/closeInput() also call scheduleDrain()
             scheduleDrain();
             return ackFuture;
         }
@@ -310,22 +306,38 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             boolean reschedule = false;
             try {
                 int budget = DRAIN_CHUNK_BUDGET;
-                byte[] chunk;
 
-                while (budget-- > 0 && (chunk = queue.poll()) != null) {
-                    // Update MD5 and write this chunk
+                while (budget-- > 0) {
+                    byte[] chunk = queue.poll();
+                    if (chunk == null) break;
+
+                    // This chunk is the last one iff producer closed and the queue is empty after polling.
+                    boolean willBeLast = closed && queue.isEmpty();
+
+                    // Update MD5 and write this chunk (append)
                     md.update(chunk);
-                    try (java.io.InputStream in = new java.io.ByteArrayInputStream(chunk)) {
-                        manager.writeChunk(resourceId, in); // append this chunk
+                    try (InputStream in = new ByteArrayInputStream(chunk)) {
+                        manager.writeChunk(resourceId, in, willBeLast);
                     }
                     bytesWritten += chunk.length;
+                    if (willBeLast) {
+                        finalSent = true;
+                    }
                 }
 
-                // If more work remains, or more may still arrive, decide what to do next
                 if (!queue.isEmpty()) {
-                    reschedule = true; // more chunks ready now
+                    // More work ready now
+                    reschedule = true;
                 } else if (closed) {
-                    // No queued data and input closed => finalize
+                    // No queued data and input closed => finalize.
+                    // If we never sent a final write (e.g., 0-byte upload), send an empty final write now.
+                    if (!finalSent) {
+                        try (InputStream empty = new ByteArrayInputStream(new byte[0])) {
+                            manager.writeChunk(resourceId, empty, true);
+                        }
+                        finalSent = true;
+                    }
+
                     String checksum = toHex(md.digest());
                     StreamingResourceStatus status = manager.getStatus(resourceId);
                     Long lines = status.getNumberOfLines();
@@ -334,12 +346,11 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 // else: queue empty but not closed yet; wait for more data (put() will reschedule)
 
             } catch (Throwable t) {
-                // Surface the failure; upper layers decide how to close the session / mark status
                 ackFuture.completeExceptionally(t);
             } finally {
                 draining.set(false);
                 // Race: new data may have arrived after we processed / cleared 'draining'
-                if ((reschedule || (!queue.isEmpty())) && draining.compareAndSet(false, true)) {
+                if ((reschedule || !queue.isEmpty()) && draining.compareAndSet(false, true)) {
                     uploadsPool.execute(this::drainSome);
                 }
             }
@@ -352,55 +363,6 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                         .append(Character.forDigit(b & 0xF, 16));
             }
             return sb.toString();
-        }
-    }
-
-    /**
-     * Simple InputStream that pulls byte[] chunks from a BlockingQueue until the producer calls closeInput().
-     * When closed == true and the queue is empty, it returns EOF.
-     */
-    private static final class ChunkQueueInputStream extends InputStream {
-        private final BlockingQueue<byte[]> q;
-        private final BooleanSupplier isClosed;
-        private byte[] cur;
-        private int off;
-
-        ChunkQueueInputStream(BlockingQueue<byte[]> q, BooleanSupplier isClosed) {
-            this.q = q;
-            this.isClosed = isClosed;
-        }
-
-        @Override
-        public int read() throws IOException {
-            byte[] b = ensureChunk();
-            if (b == null) return -1;
-            return b[off++] & 0xFF;
-        }
-
-        @Override
-        public int read(byte[] b, int off, int len) throws IOException {
-            if (b == null) throw new NullPointerException();
-            if (off < 0 || len < 0 || off + len > b.length) throw new IndexOutOfBoundsException();
-            byte[] chunk = ensureChunk();
-            if (chunk == null) return -1;
-            int n = Math.min(len, chunk.length - this.off);
-            System.arraycopy(chunk, this.off, b, off, n);
-            this.off += n;
-            return n;
-        }
-
-        private byte[] ensureChunk() throws IOException {
-            try {
-                while (cur == null || off >= cur.length) {
-                    if (isClosed.getAsBoolean() && q.isEmpty()) return null; // EOF
-                    cur = q.poll(10, TimeUnit.MILLISECONDS);
-                    off = 0;
-                }
-                return cur;
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                throw new EOFException("Interrupted while waiting for data");
-            }
         }
     }
 }

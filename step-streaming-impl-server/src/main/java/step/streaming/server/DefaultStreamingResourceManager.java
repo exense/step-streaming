@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.*;
 import step.streaming.server.data.LineSlicingIterator;
+import step.streaming.util.ExceptionsUtil;
 import step.streaming.util.ThrowingConsumer;
 
 import java.io.IOException;
@@ -13,7 +14,6 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -95,33 +95,75 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
 
     }
 
+    // used for debouncing size change notifications to listeners,
+    // and to reduce the number of DB (catalog) updates.
+    private static class ActiveUpload {
+        // roughly every second:
+        private static final long NOTIFICATION_INTERVAL_MS = 1000;
+
+        private long lastNotificationTimestamp = 0;
+        long currentSize;
+        boolean lastCallDidNotify = false;
+
+        public boolean setCurrentSize(long newSize) {
+            long now = System.currentTimeMillis();
+            lastCallDidNotify = now - lastNotificationTimestamp >= NOTIFICATION_INTERVAL_MS && currentSize != newSize;
+            currentSize = newSize;
+            if (lastCallDidNotify) {
+                lastNotificationTimestamp = now;
+            }
+            return lastCallDidNotify;
+        }
+    }
+
+    private final Map<String, ActiveUpload> activeUploads = new ConcurrentHashMap<>();
+
     @Override
-    public long writeChunk(String resourceId, InputStream input) throws IOException {
+    public long writeChunk(String resourceId, InputStream input, boolean isFinal) throws IOException {
+        ActiveUpload upload = activeUploads.computeIfAbsent(resourceId, key -> new ActiveUpload());
         try {
             long sizeBeforeChunk = storage.getCurrentSize(resourceId);
             AtomicReference<Long> linebreakCount = new AtomicReference<>();
             ThrowingConsumer<Long> linebreakCountListener = linebreakCount::set;
             ThrowingConsumer<Long> sizeListener = chunkSize -> {
                 long updatedSize = sizeBeforeChunk + chunkSize;
-                onSizeChanged(resourceId, updatedSize);
-                StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(
-                        StreamingResourceTransferStatus.IN_PROGRESS, updatedSize, linebreakCount.get()
-                );
-                logger.debug("Updating streaming resource: {}, statusUpdate={}", resourceId, update);
-                StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
-                logger.debug("Updated streaming resource: {}, status={}", resourceId, status);
-                emitStatus(resourceId, status);
+                boolean notify = upload.setCurrentSize(updatedSize);
+                if (notify) {
+                    logger.info("sending size change notification");
+                    persistAndNotifyOnSizeChange(resourceId, updatedSize, linebreakCount.get());
+                } else {
+                    logger.trace("skipping size change notification");
+                }
             };
             storage.writeChunk(resourceId, input, sizeListener, linebreakCountListener);
 
+            // always notify on final chunk (except if we already just did)
+            if (isFinal && !upload.lastCallDidNotify) {
+                persistAndNotifyOnSizeChange(resourceId, upload.currentSize, linebreakCount.get());
+            }
             long currentSize = storage.getCurrentSize(resourceId);
             logger.debug("Delegated chunk write for {} (current size: {})", resourceId, currentSize);
             return currentSize;
-        } catch (IOException e) {
+        } catch (Exception e) {
             logger.warn("IOException during writeChunk for {} — marking FAILED: {}", resourceId, e.getMessage());
             markFailed(resourceId);
-            throw e;
+            throw ExceptionsUtil.as(e, IOException.class);
+        } finally {
+            if (isFinal) {
+                activeUploads.remove(resourceId);
+            }
         }
+    }
+
+    private void persistAndNotifyOnSizeChange(String resourceId, long updatedSize, Long linebreakCount) throws QuotaExceededException, IOException {
+        onSizeChanged(resourceId, updatedSize);
+        StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(
+                StreamingResourceTransferStatus.IN_PROGRESS, updatedSize, linebreakCount
+        );
+        logger.debug("Updating streaming resource: {}, statusUpdate={}", resourceId, update);
+        StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
+        logger.debug("Updated streaming resource: {}, status={}", resourceId, status);
+        emitStatus(resourceId, status);
     }
 
     private StreamingResourceStatusUpdate getFinalStatusUpdate(String resourceId, StreamingResourceTransferStatus transferStatus) throws IOException {
