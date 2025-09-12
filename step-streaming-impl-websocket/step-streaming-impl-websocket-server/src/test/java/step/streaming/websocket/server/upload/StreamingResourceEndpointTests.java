@@ -53,7 +53,7 @@ import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.TE
 
 public class StreamingResourceEndpointTests {
     private static final Logger logger = LoggerFactory.getLogger("UNITTEST");
-    private WebSocketContainer wsContainer;
+    private final WebSocketContainer wsContainer = ContainerProvider.getWebSocketContainer();
     private TestingStorageBackend storageBackend;
     private InMemoryCatalogBackend catalogBackend;
     private TestingResourceManager manager;
@@ -68,7 +68,6 @@ public class StreamingResourceEndpointTests {
 
     @Before
     public void setUp() throws Exception {
-        wsContainer = ContainerProvider.getWebSocketContainer();
         sessionsHandler = new DefaultWebsocketServerEndpointSessionsHandler();
         storageBackend = new TestingStorageBackend(1000L, false);
         catalogBackend = new InMemoryCatalogBackend();
@@ -86,7 +85,6 @@ public class StreamingResourceEndpointTests {
     public void tearDown() throws Exception {
         Thread.sleep(100);
         sessionsHandler.shutdown();
-        ((LifeCycle) wsContainer).stop();
         server.stop();
         storageBackend.cleanup();
     }
