@@ -23,6 +23,7 @@ import step.streaming.data.*;
 import step.streaming.server.URITemplateBasedReferenceProducer;
 import step.streaming.server.test.InMemoryCatalogBackend;
 import step.streaming.server.test.TestingStorageBackend;
+import step.streaming.util.ThreadPools;
 import step.streaming.websocket.client.upload.WebsocketUploadClient;
 import step.streaming.websocket.client.upload.WebsocketUploadProvider;
 import step.streaming.websocket.client.upload.WebsocketUploadSession;
@@ -67,25 +68,6 @@ public class StreamingResourceEndpointTests {
         }
     };
 
-    // These are used for turning asynchronous data chunks into synchronous streams -- TODO: production logic should use something like this
-    private static ExecutorService makeUploadPool(String threadPrefix) {
-        return new ThreadPoolExecutor(
-                Math.max(2, Runtime.getRuntime().availableProcessors()),
-                Math.max(2, Runtime.getRuntime().availableProcessors()),
-                0L, TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(256),
-                namedDaemon(threadPrefix)
-        );
-    }
-
-    private static ThreadFactory namedDaemon(String prefix) {
-        return r -> {
-            Thread t = new Thread(r, prefix + "-" + System.identityHashCode(r));
-            t.setDaemon(true);
-            return t;
-        };
-    }
-
     private static final Logger logger = LoggerFactory.getLogger("UNITTEST");
     private WebSocketContainer wsContainer;
     private TestingStorageBackend storageBackend;
@@ -103,8 +85,8 @@ public class StreamingResourceEndpointTests {
 
     @Before
     public void setUp() throws Exception {
-        clientsExecutor = Executors.newFixedThreadPool(4, namedDaemon("clients-executor"));
-        serverExecutor = Executors.newFixedThreadPool(4, namedDaemon("websocket-upload-processor"));
+        clientsExecutor = ThreadPools.createPoolExecutor("clients-executor");
+        serverExecutor = ThreadPools.createPoolExecutor("websocket-upload-processor");
         wsContainer = ContainerProvider.getWebSocketContainer();
         sessionsHandler = new DefaultWebsocketServerEndpointSessionsHandler();
         storageBackend = new TestingStorageBackend(1000L, false);
