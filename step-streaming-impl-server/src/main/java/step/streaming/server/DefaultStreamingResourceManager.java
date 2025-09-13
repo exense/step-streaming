@@ -129,7 +129,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
                 long updatedSize = sizeBeforeChunk + chunkSize;
                 boolean notify = upload.setCurrentSize(updatedSize);
                 if (notify) {
-                    logger.info("sending size change notification");
+                    logger.debug("sending size change notification");
                     persistAndNotifyOnSizeChange(resourceId, updatedSize, linebreakCount.get());
                 } else {
                     logger.trace("skipping size change notification");
@@ -139,6 +139,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
 
             // always notify on final chunk (except if we already just did)
             if (isFinal && !upload.lastCallDidNotify) {
+                logger.debug("sending size change notification because of final chunk");
                 persistAndNotifyOnSizeChange(resourceId, upload.currentSize, linebreakCount.get());
             }
             long currentSize = storage.getCurrentSize(resourceId);
@@ -169,7 +170,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     private StreamingResourceStatusUpdate getFinalStatusUpdate(String resourceId, StreamingResourceTransferStatus transferStatus) throws IOException {
         long finalSize = storage.getCurrentSize(resourceId);
         LinebreakIndex linebreakIndex = storage.getLinebreakIndex(resourceId);
-        Long correctedNumberOfLines = null;
+        Long finalNumberOfLines = null;
         // Line numbers are a PITA in some edge cases, because not all files properly end with a linebreak.
         // Note that this only (potentially) concerns the very last line of the file. If the last byte
         // in the file is a linebreak, all is good -- the file is properly terminated.
@@ -178,16 +179,17 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
         if (linebreakIndex != null) {
             long linebreakCount = linebreakIndex.getTotalEntries();
             if (linebreakCount > 0) {
+                finalNumberOfLines = linebreakCount;
                 long lastLb = linebreakIndex.getLinebreakPosition(linebreakCount - 1);
                 if (lastLb != finalSize - 1) {
-                    correctedNumberOfLines = linebreakCount + 1;
+                    finalNumberOfLines = linebreakCount + 1;
                 }
             } else {
                 // even more exotic: no linebreak at all -> single line, UNLESS the file has 0 bytes.
-                correctedNumberOfLines = finalSize > 0 ? 1L : 0L;
+                finalNumberOfLines = finalSize > 0 ? 1L : 0L;
             }
         }
-        return new StreamingResourceStatusUpdate(transferStatus, finalSize, correctedNumberOfLines);
+        return new StreamingResourceStatusUpdate(transferStatus, finalSize, finalNumberOfLines);
     }
 
     @Override

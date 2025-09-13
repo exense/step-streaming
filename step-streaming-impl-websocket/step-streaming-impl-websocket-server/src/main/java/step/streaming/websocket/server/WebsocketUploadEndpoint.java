@@ -94,6 +94,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         if (exception instanceof IOException && exception.getCause() instanceof QuotaExceededException) {
             exception = exception.getCause();
         }
+        logger.warn("Closing Websocket Session with error: {}", exception.getMessage(), exception);
         if (exception instanceof QuotaExceededException) {
             // this one is handled specially by the client
             closeSession(session, CloseReasonUtil.makeSafeCloseReason(
@@ -131,7 +132,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         } else if (state == State.EXPECTING_FINISHEDMESSAGE && clientMessage instanceof FinishUploadMessage) {
             FinishUploadMessage finishMessage = (FinishUploadMessage) clientMessage;
             if (uploadAcknowledgedMessage == null) {
-                throw new IllegalStateException("ackFuture not initialized");
+                throw new IllegalStateException("uploadAcknowledgedMessage not initialized");
             }
             // Wait asynchronously for the consumer to finish, then validate and respond.
             uploadAcknowledgedMessage.whenComplete((ack, ex) -> {
@@ -145,14 +146,14 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                                     finishMessage.checksum, ack.checksum)));
                     return;
                 }
-                // send ack now (response to FinishUploadMessage, just like before)
-                session.getAsyncRemote().sendText(ack.toString(), result -> {
-                    if (!result.isOK()) {
-                        logger.warn("{}: failed to send ack", resourceId, result.getException());
-                    }
-                });
                 manager.markCompleted(resourceId);
                 state = State.FINISHED;
+                logger.info("Upload complete, sending acknowledge message: {}", ack);
+                session.getAsyncRemote().sendText(ack.toString(), result -> {
+                    if (!result.isOK()) {
+                        logger.warn("{}: failed to send upload acknowledge", resourceId, result.getException());
+                    }
+                });
             });
         } else {
             throw new IllegalArgumentException("Unsupported message in state " + state + ": " + messageString);
@@ -199,9 +200,8 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             if (closeReason.getCloseCode() == CloseReason.CloseCodes.NORMAL_CLOSURE
                     && closeReason.getReasonPhrase().equals(UploadProtocolMessage.CLOSEREASON_PHRASE_UPLOAD_COMPLETED)
                     && state == State.FINISHED) {
-                logger.debug("Session closed: {}, resourceId={}, reason={}; marking as completed",
+                logger.debug("Session closed: {}, resourceId={}, reason={}",
                         session.getId(), resourceId, closeReason);
-                manager.markCompleted(resourceId);
             } else {
                 StreamingResourceTransferStatus status = manager.getStatus(resourceId).getTransferStatus();
                 logger.warn("Upload session for resource {}, state {} was closed with reason {}, resource was left with status {}; marking upload as failed.",

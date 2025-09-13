@@ -271,4 +271,6 @@ public class WebsocketDownload extends AbstractStreamingTransfer implements Stre
     protected void onStatusCallbackFailed(Consumer<StreamingResourceStatus> callback, Exception exception) {
         logger.error("Error while invoking status callback {}", callback, exception);
     }
+
+
 }
