@@ -13,15 +13,17 @@ import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.upload.*;
 
 import java.io.ByteArrayInputStream;
-import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.security.MessageDigest;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.BooleanSupplier;
 
 public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     public static final String DEFAULT_ENDPOINT_URL = "/ws/streaming/upload";
@@ -237,26 +239,28 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     // Code below is mostly AI-generated (but manually reviewed and slightly adapted)
 
     /**
-     * Cooperatively drains queued byte[] chunks to storage without monopolizing a thread.
-     * Calls manager.writeChunk(resourceId, in, isFinal) and sets isFinal=true exactly once,
-     * on the last write for this upload (including the 0-byte case).
+     * Cooperative, per-upload serial runner.
+     * - Uses the shared uploadsPool (no dedicated thread per upload).
+     * - Processes a small batch per hop, then yields.
+     * - Calls manager.writeChunk(resourceId, in, isFinal) with isFinal=true exactly once.
+     * - Handles 0-byte uploads via a final empty write.
      */
     private static final class UploadPipeline {
         private static final int PER_UPLOAD_QUEUE_CAPACITY = 128;
-        private static final int DRAIN_CHUNK_BUDGET = 16; // how many chunks to process per hop
+        private static final int MAX_BATCH_CHUNKS = 32; // fairness: how many chunks per hop
 
         private final String resourceId;
         private final ExecutorService uploadsPool;
         private final BlockingQueue<byte[]> queue = new ArrayBlockingQueue<>(PER_UPLOAD_QUEUE_CAPACITY);
-        private final AtomicBoolean draining = new AtomicBoolean(false);
+        private final AtomicBoolean running = new AtomicBoolean(false);
 
         private volatile boolean closed;
 
-        // set when startConsumer(...) is called
+        // set in startConsumer(...)
         private StreamingResourceManager manager;
-        private java.security.MessageDigest md; // MD5 over all bytes
-        private long bytesWritten;              // total bytes written (sum of chunk sizes)
-        private boolean finalSent;              // true once we've sent isFinal=true
+        private MessageDigest md;
+        private long bytesWritten;
+        private boolean finalSent;
         private CompletableFuture<UploadAcknowledgedMessage> ackFuture;
 
         UploadPipeline(String resourceId, ExecutorService uploadsPool) {
@@ -264,24 +268,22 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             this.uploadsPool = uploadsPool;
         }
 
-        /** Enqueue a chunk. A brief block here only affects this connection’s handler invocation. */
+        /** Enqueue a chunk; bounded queue provides backpressure to the Jetty thread. */
         void put(byte[] chunk) throws InterruptedException {
+            // try non-blocking first; if full, block this one connection briefly
             if (!queue.offer(chunk)) {
-                queue.put(chunk); // bounded backpressure
+                queue.put(chunk);
             }
-            scheduleDrain();
+            schedule();
         }
 
-        /** Signal that no more input will arrive (last frame seen). */
+        /** Signal that no more input will arrive. */
         void closeInput() {
             closed = true;
-            scheduleDrain();
+            schedule();
         }
 
-        /**
-         * Start draining to storage, returning a future that completes when all queued bytes
-         * have been written. No WebSocket sends happen here; upper layers decide when to reply.
-         */
+        /** Start draining; returns a future that completes once all bytes are written and ack is ready. */
         CompletableFuture<UploadAcknowledgedMessage> startConsumer(StreamingResourceManager manager) {
             this.manager = manager;
             try {
@@ -290,68 +292,60 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 throw new IllegalStateException("MD5 not available", e);
             }
             this.ackFuture = new CompletableFuture<>();
-            scheduleDrain();
+            schedule();
             return ackFuture;
         }
 
-        /** Ensure a drain task is enqueued if one isn't already running. */
-        private void scheduleDrain() {
-            if (draining.compareAndSet(false, true)) {
-                uploadsPool.execute(this::drainSome);
+        /** Ensure exactly one runner is active; if not, enqueue one hop. */
+        private void schedule() {
+            if (running.compareAndSet(false, true)) {
+                uploadsPool.execute(this::runOnce);
             }
         }
 
-        /** Process a bounded amount of work, then yield. */
-        private void drainSome() {
-            boolean reschedule = false;
+        /** Process a small batch, then either finalize, reschedule, or yield idle. */
+        private void runOnce() {
+            boolean moreWork = false;
             try {
-                int budget = DRAIN_CHUNK_BUDGET;
+                int processed = 0;
+                byte[] chunk;
 
-                while (budget-- > 0) {
-                    byte[] chunk = queue.poll();
-                    if (chunk == null) break;
+                while (processed < MAX_BATCH_CHUNKS && (chunk = queue.poll()) != null) {
+                    boolean willBeLast = closed && queue.isEmpty(); // last *after* popping this chunk
 
-                    // This chunk is the last one iff producer closed and the queue is empty after polling.
-                    boolean willBeLast = closed && queue.isEmpty();
-
-                    // Update MD5 and write this chunk (append)
                     md.update(chunk);
                     try (InputStream in = new ByteArrayInputStream(chunk)) {
                         manager.writeChunk(resourceId, in, willBeLast);
                     }
                     bytesWritten += chunk.length;
-                    if (willBeLast) {
-                        finalSent = true;
-                    }
+                    if (willBeLast) finalSent = true;
+
+                    processed++;
                 }
 
                 if (!queue.isEmpty()) {
-                    // More work ready now
-                    reschedule = true;
+                    // more chunks ready right now — keep going soon
+                    moreWork = true;
                 } else if (closed) {
-                    // No queued data and input closed => finalize.
-                    // If we never sent a final write (e.g., 0-byte upload), send an empty final write now.
+                    // input closed and queue empty => finalize if needed, then complete ack
                     if (!finalSent) {
                         try (InputStream empty = new ByteArrayInputStream(new byte[0])) {
                             manager.writeChunk(resourceId, empty, true);
                         }
                         finalSent = true;
                     }
-
                     String checksum = toHex(md.digest());
                     StreamingResourceStatus status = manager.getStatus(resourceId);
                     Long lines = status.getNumberOfLines();
                     ackFuture.complete(new UploadAcknowledgedMessage(bytesWritten, lines, checksum));
                 }
-                // else: queue empty but not closed yet; wait for more data (put() will reschedule)
-
             } catch (Throwable t) {
                 ackFuture.completeExceptionally(t);
             } finally {
-                draining.set(false);
-                // Race: new data may have arrived after we processed / cleared 'draining'
-                if ((reschedule || !queue.isEmpty()) && draining.compareAndSet(false, true)) {
-                    uploadsPool.execute(this::drainSome);
+                // yield: drop the running flag, and if work showed up in the meantime, re-arm
+                running.set(false);
+                if ((moreWork || !queue.isEmpty()) && running.compareAndSet(false, true)) {
+                    uploadsPool.execute(this::runOnce);
                 }
             }
         }

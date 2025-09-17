@@ -198,7 +198,7 @@ public class WebsocketUploadClient {
     }
 
     private void onError(Throwable throwable) {
-        logger.error("{} Unexpected error", this, throwable);
+        logger.error("{} Unexpected error", this);
         uploadSession.getFinalStatusFuture().completeExceptionally(throwable);
     }
 
