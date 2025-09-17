@@ -198,6 +198,8 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
             StreamingResourceStatusUpdate update = getFinalStatusUpdate(resourceId, StreamingResourceTransferStatus.COMPLETED);
             StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
             logger.debug("Resource marked COMPLETED: {}, status={}", resourceId, status);
+            // just in case, if it hasn't been removed yet for whichever reason
+            activeUploads.remove(resourceId);
             emitStatus(resourceId, status);
         } catch (IOException e) {
             logger.warn("IOException during markCompleted for {}, marking as failed instead", resourceId, e);
@@ -223,6 +225,8 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
             update = new StreamingResourceStatusUpdate(StreamingResourceTransferStatus.FAILED, 0L, 0L);
         }
         StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
+        // just in case, if it hasn't been removed yet for whichever reason
+        activeUploads.remove(resourceId);
         logger.warn("Resource marked FAILED: {}, status={}", resourceId, status);
         emitStatus(resourceId, status);
     }
