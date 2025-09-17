@@ -27,8 +27,9 @@ public class WebsocketUploadProvider extends AbstractStreamingUploadProvider {
     /**
      * Creates a new {@code WebsocketUploadProvider} with a custom pool size for asynchronous uploads.
      *
-     * @param endpointUri     the WebSocket endpoint URI to which uploads should be directed
+     * @param container       the WebSocketContainer to use for constructing clients
      * @param executorService the ExecutorService to use for concurrent uploads
+     * @param endpointUri     the WebSocket endpoint URI to which uploads should be directed
      */
     public WebsocketUploadProvider(WebSocketContainer container, ExecutorService executorService, URI endpointUri) {
         super(executorService);

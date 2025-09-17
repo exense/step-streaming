@@ -15,8 +15,11 @@ import step.streaming.websocket.protocol.upload.*;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.SequenceInputStream;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -308,19 +311,33 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             boolean moreWork = false;
             try {
                 int processed = 0;
+                int totalBytes = 0;
+                List<byte[]> batch = new ArrayList<>(MAX_BATCH_CHUNKS);
+
                 byte[] chunk;
-
                 while (processed < MAX_BATCH_CHUNKS && (chunk = queue.poll()) != null) {
-                    boolean willBeLast = closed && queue.isEmpty(); // last *after* popping this chunk
-
                     md.update(chunk);
-                    try (InputStream in = new ByteArrayInputStream(chunk)) {
-                        manager.writeChunk(resourceId, in, willBeLast);
-                    }
-                    bytesWritten += chunk.length;
-                    if (willBeLast) finalSent = true;
-
+                    batch.add(chunk);
+                    totalBytes += chunk.length;
                     processed++;
+                }
+
+                if (processed > 0) {
+                    // After popping this batch, if input is closed and nothing remains, this batch is the final write.
+                    boolean willBeLastBatch = closed && queue.isEmpty();
+
+                    Enumeration<InputStream> parts = new Enumeration<>() {
+                        int i = 0;
+                        @Override public boolean hasMoreElements() { return i < batch.size(); }
+                        @Override public InputStream nextElement() { return new ByteArrayInputStream(batch.get(i++)); }
+                    };
+
+                    try (InputStream combined = new SequenceInputStream(parts)) {
+                        manager.writeChunk(resourceId, combined, willBeLastBatch);
+                    }
+
+                    bytesWritten += totalBytes;
+                    if (willBeLastBatch) finalSent = true;
                 }
 
                 if (!queue.isEmpty()) {
