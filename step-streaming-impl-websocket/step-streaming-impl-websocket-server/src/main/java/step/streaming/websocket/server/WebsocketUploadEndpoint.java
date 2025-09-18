@@ -12,14 +12,9 @@ import step.streaming.websocket.CloseReasonUtil;
 import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.upload.*;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.SequenceInputStream;
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
-import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -251,6 +246,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     private static final class UploadPipeline {
         private static final int PER_UPLOAD_QUEUE_CAPACITY = 128;
         private static final int MAX_BATCH_CHUNKS = 32; // fairness: how many chunks per hop
+        private static final int MAX_BATCH_SIZE = 128 * 1024; // maximum bytes processed in one batch
 
         private final String resourceId;
         private final ExecutorService uploadsPool;
@@ -312,12 +308,12 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             try {
                 int processed = 0;
                 int totalBytes = 0;
-                List<byte[]> batch = new ArrayList<>(MAX_BATCH_CHUNKS);
+                ByteArrayOutputStream batch = new ByteArrayOutputStream();
 
                 byte[] chunk;
-                while (processed < MAX_BATCH_CHUNKS && (chunk = queue.poll()) != null) {
+                while (processed < MAX_BATCH_CHUNKS && totalBytes <= MAX_BATCH_SIZE && (chunk = queue.poll()) != null) {
                     md.update(chunk);
-                    batch.add(chunk);
+                    batch.write(chunk);
                     totalBytes += chunk.length;
                     processed++;
                 }
@@ -326,13 +322,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                     // After popping this batch, if input is closed and nothing remains, this batch is the final write.
                     boolean willBeLastBatch = closed && queue.isEmpty();
 
-                    Enumeration<InputStream> parts = new Enumeration<>() {
-                        int i = 0;
-                        @Override public boolean hasMoreElements() { return i < batch.size(); }
-                        @Override public InputStream nextElement() { return new ByteArrayInputStream(batch.get(i++)); }
-                    };
-
-                    try (InputStream combined = new SequenceInputStream(parts)) {
+                    try (InputStream combined = new ByteArrayInputStream(batch.toByteArray())) {
                         manager.writeChunk(resourceId, combined, willBeLastBatch);
                     }
 
