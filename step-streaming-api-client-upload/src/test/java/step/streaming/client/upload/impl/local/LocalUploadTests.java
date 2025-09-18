@@ -18,7 +18,7 @@ public class LocalUploadTests {
 
     @Test
     public void testDiscardingUpload() throws Exception {
-        StreamingUploads uploads = new StreamingUploads(new DiscardingStreamingUploadProvider(Executors.newSingleThreadExecutor()));
+        StreamingUploads uploads = new StreamingUploads(new DiscardingStreamingUploadProvider());
         File liveFile = Files.createTempFile("streaming-upload-test-", ".txt").toFile();
         LineProducer producer = new LineProducer(liveFile, 10, 200);
         try {

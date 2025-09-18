@@ -12,10 +12,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class BasicStreamingUploadSession extends AbstractStreamingTransfer implements StreamingUploadSession {
     protected final EndOfInputSignal endOfInputSignal;
@@ -33,17 +30,23 @@ public class BasicStreamingUploadSession extends AbstractStreamingTransfer imple
     public BasicStreamingUploadSession(StreamingResourceMetadata metadata, EndOfInputSignal endOfInputSignal) {
         this.metadata = metadata;
         this.endOfInputSignal = Objects.requireNonNull(endOfInputSignal);
-        // This will perform a final update of the current status on completion.
-        finalStatusFuture.whenComplete((status, throwable) -> {
-            if (throwable == null) {
-                setCurrentStatus(status);
-            } else {
-                Optional<StreamingResourceStatus> lastStatus = Optional.ofNullable(getCurrentStatus());
-                setCurrentStatus(new StreamingResourceStatus(StreamingResourceTransferStatus.FAILED,
-                        lastStatus.map(StreamingResourceStatus::getCurrentSize).orElse(0L),
-                        lastStatus.map(StreamingResourceStatus::getNumberOfLines).orElse(null)));
+    }
+
+    @Override
+    public StreamingResourceStatus getCurrentStatus() {
+        // previous code (finalStatusFuture.whenDone -> setCurrentStatus) had a tiny race condition when retrieving current immediately after completion
+        if (!finalStatusFuture.isDone()) {
+            return super.getCurrentStatus();
+        } else {
+            try {
+                return finalStatusFuture.join();
+            } catch (java.util.concurrent.CancellationException | java.util.concurrent.CompletionException ex) {
+                StreamingResourceStatus last = super.getCurrentStatus();
+                long size = (last != null) ? last.getCurrentSize() : 0L;
+                Long lines = (last != null) ? last.getNumberOfLines() : null;
+                return new StreamingResourceStatus(StreamingResourceTransferStatus.FAILED, size, lines);
             }
-        });
+        }
     }
 
     @Override

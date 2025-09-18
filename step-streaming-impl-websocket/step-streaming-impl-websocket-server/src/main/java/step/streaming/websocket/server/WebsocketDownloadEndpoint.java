@@ -1,7 +1,6 @@
 package step.streaming.websocket.server;
 
 import jakarta.websocket.CloseReason;
-import jakarta.websocket.Endpoint;
 import jakarta.websocket.EndpointConfig;
 import jakarta.websocket.Session;
 import org.slf4j.Logger;
@@ -39,7 +38,6 @@ public class WebsocketDownloadEndpoint extends HalfCloseCompatibleEndpoint {
     private final Object coordinationLock = new Object();
     private boolean downloading = false;
     private final AtomicReference<StreamingResourceStatus> deferredStatus = new AtomicReference<>();
-
 
 
     protected Session session;
@@ -138,12 +136,15 @@ public class WebsocketDownloadEndpoint extends HalfCloseCompatibleEndpoint {
     private void sendStatusUpdate(StreamingResourceStatus status) {
         String message = new StatusChangedMessage(status).toString();
         logger.debug("Notifying client endpoint about status change: {}", message);
-        try {
-            session.getBasicRemote().sendText(message);
-            logger.debug("Notification sent.");
-        } catch (IOException e) {
-            logger.error("Error notifying client endpoint about status change", e);
-        }
+
+        session.getAsyncRemote().sendText(message, result -> {
+            if (result.isOK()) {
+                logger.debug("Notification sent.");
+            } else {
+                logger.debug("Status notify failed (possibly client closed): {}",
+                        result.getException() != null ? result.getException().toString() : "unknown");
+            }
+        });
     }
 
 

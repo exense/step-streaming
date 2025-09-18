@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.*;
 import step.streaming.server.data.LineSlicingIterator;
+import step.streaming.util.ExceptionsUtil;
 import step.streaming.util.ThrowingConsumer;
 
 import java.io.IOException;
@@ -12,6 +13,7 @@ import java.io.UncheckedIOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -27,6 +29,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     protected final StreamingResourcesStorageBackend storage;
     protected final StreamingResourceUploadContexts uploadContexts;
     protected final Function<String, StreamingResourceReference> referenceProducerFunction;
+    protected final ExecutorService uploadsThreadPool;
 
     // Listeners interested in a single resource (e.g. download clients). Listeners interested in an entire context will use the respective methods in the uploadContexts instead.
     protected final Map<String, CopyOnWriteArrayList<Consumer<StreamingResourceStatus>>> statusListeners = new ConcurrentHashMap<>();
@@ -34,12 +37,20 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     public DefaultStreamingResourceManager(StreamingResourcesCatalogBackend catalog,
                                            StreamingResourcesStorageBackend storage,
                                            Function<String, StreamingResourceReference> referenceProducerFunction,
-                                           StreamingResourceUploadContexts uploadContexts
+                                           StreamingResourceUploadContexts uploadContexts,
+                                           ExecutorService uploadsThreadPool
+
     ) {
         this.catalog = Objects.requireNonNull(catalog);
         this.storage = Objects.requireNonNull(storage);
         this.referenceProducerFunction = Objects.requireNonNull(referenceProducerFunction);
         this.uploadContexts = uploadContexts;
+        this.uploadsThreadPool = uploadsThreadPool;
+    }
+
+    @Override
+    public ExecutorService getUploadsThreadPool() {
+        return uploadsThreadPool;
     }
 
     @Override
@@ -84,37 +95,82 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
 
     }
 
+    // used for debouncing size change notifications to listeners,
+    // and to reduce the number of DB (catalog) updates.
+    private static class ActiveUpload {
+        // roughly every second:
+        private static final long NOTIFICATION_INTERVAL_MS = 1000;
+
+        private long lastNotificationTimestamp = 0;
+        long currentSize;
+        boolean lastCallDidNotify = false;
+
+        public boolean setCurrentSize(long newSize) {
+            long now = System.currentTimeMillis();
+            lastCallDidNotify = now - lastNotificationTimestamp >= NOTIFICATION_INTERVAL_MS && currentSize != newSize;
+            currentSize = newSize;
+            if (lastCallDidNotify) {
+                lastNotificationTimestamp = now;
+            }
+            return lastCallDidNotify;
+        }
+    }
+
+    private final Map<String, ActiveUpload> activeUploads = new ConcurrentHashMap<>();
+
     @Override
-    public long writeChunk(String resourceId, InputStream input) throws IOException {
+    public long writeChunk(String resourceId, InputStream input, boolean isFinal) throws IOException {
+        ActiveUpload upload = activeUploads.computeIfAbsent(resourceId, key -> new ActiveUpload());
         try {
+            long sizeBeforeChunk = storage.getCurrentSize(resourceId);
             AtomicReference<Long> linebreakCount = new AtomicReference<>();
             ThrowingConsumer<Long> linebreakCountListener = linebreakCount::set;
-            ThrowingConsumer<Long> sizeListener = updatedSize -> {
-                onSizeChanged(resourceId, updatedSize);
-                StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(
-                        StreamingResourceTransferStatus.IN_PROGRESS, updatedSize, linebreakCount.get()
-                );
-                logger.debug("Updating streaming resource: {}, statusUpdate={}", resourceId, update);
-                StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
-                logger.debug("Updated streaming resource: {}, status={}", resourceId, status);
-                emitStatus(resourceId, status);
+            ThrowingConsumer<Long> sizeListener = chunkSize -> {
+                long updatedSize = sizeBeforeChunk + chunkSize;
+                boolean notify = upload.setCurrentSize(updatedSize);
+                if (notify) {
+                    logger.debug("sending size change notification");
+                    persistAndNotifyOnSizeChange(resourceId, updatedSize, linebreakCount.get());
+                } else {
+                    logger.trace("skipping size change notification");
+                }
             };
             storage.writeChunk(resourceId, input, sizeListener, linebreakCountListener);
 
+            // always notify on final chunk (except if we already just did)
+            if (isFinal && !upload.lastCallDidNotify) {
+                logger.debug("sending size change notification because of final chunk");
+                persistAndNotifyOnSizeChange(resourceId, upload.currentSize, linebreakCount.get());
+            }
             long currentSize = storage.getCurrentSize(resourceId);
             logger.debug("Delegated chunk write for {} (current size: {})", resourceId, currentSize);
             return currentSize;
-        } catch (IOException e) {
+        } catch (Exception e) {
             logger.warn("IOException during writeChunk for {} — marking FAILED: {}", resourceId, e.getMessage());
             markFailed(resourceId);
-            throw e;
+            throw ExceptionsUtil.as(e, IOException.class);
+        } finally {
+            if (isFinal) {
+                activeUploads.remove(resourceId);
+            }
         }
+    }
+
+    private void persistAndNotifyOnSizeChange(String resourceId, long updatedSize, Long linebreakCount) throws QuotaExceededException, IOException {
+        onSizeChanged(resourceId, updatedSize);
+        StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(
+                StreamingResourceTransferStatus.IN_PROGRESS, updatedSize, linebreakCount
+        );
+        logger.debug("Updating streaming resource: {}, statusUpdate={}", resourceId, update);
+        StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
+        logger.debug("Updated streaming resource: {}, status={}", resourceId, status);
+        emitStatus(resourceId, status);
     }
 
     private StreamingResourceStatusUpdate getFinalStatusUpdate(String resourceId, StreamingResourceTransferStatus transferStatus) throws IOException {
         long finalSize = storage.getCurrentSize(resourceId);
         LinebreakIndex linebreakIndex = storage.getLinebreakIndex(resourceId);
-        Long correctedNumberOfLines = null;
+        Long finalNumberOfLines = null;
         // Line numbers are a PITA in some edge cases, because not all files properly end with a linebreak.
         // Note that this only (potentially) concerns the very last line of the file. If the last byte
         // in the file is a linebreak, all is good -- the file is properly terminated.
@@ -123,16 +179,17 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
         if (linebreakIndex != null) {
             long linebreakCount = linebreakIndex.getTotalEntries();
             if (linebreakCount > 0) {
+                finalNumberOfLines = linebreakCount;
                 long lastLb = linebreakIndex.getLinebreakPosition(linebreakCount - 1);
                 if (lastLb != finalSize - 1) {
-                    correctedNumberOfLines = linebreakCount + 1;
+                    finalNumberOfLines = linebreakCount + 1;
                 }
             } else {
                 // even more exotic: no linebreak at all -> single line, UNLESS the file has 0 bytes.
-                correctedNumberOfLines = finalSize > 0 ? 1L : 0L;
+                finalNumberOfLines = finalSize > 0 ? 1L : 0L;
             }
         }
-        return new StreamingResourceStatusUpdate(transferStatus, finalSize, correctedNumberOfLines);
+        return new StreamingResourceStatusUpdate(transferStatus, finalSize, finalNumberOfLines);
     }
 
     @Override
@@ -141,6 +198,8 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
             StreamingResourceStatusUpdate update = getFinalStatusUpdate(resourceId, StreamingResourceTransferStatus.COMPLETED);
             StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
             logger.debug("Resource marked COMPLETED: {}, status={}", resourceId, status);
+            // just in case, if it hasn't been removed yet for whichever reason
+            activeUploads.remove(resourceId);
             emitStatus(resourceId, status);
         } catch (IOException e) {
             logger.warn("IOException during markCompleted for {}, marking as failed instead", resourceId, e);
@@ -166,6 +225,8 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
             update = new StreamingResourceStatusUpdate(StreamingResourceTransferStatus.FAILED, 0L, 0L);
         }
         StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
+        // just in case, if it hasn't been removed yet for whichever reason
+        activeUploads.remove(resourceId);
         logger.warn("Resource marked FAILED: {}, status={}", resourceId, status);
         emitStatus(resourceId, status);
     }

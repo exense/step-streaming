@@ -1,6 +1,9 @@
 package step.streaming.server;
 
-import org.junit.*;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
 import org.junit.function.ThrowingRunnable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,16 +14,16 @@ import step.streaming.common.StreamingResourceTransferStatus;
 import step.streaming.server.test.FailingInputStream;
 import step.streaming.server.test.InMemoryCatalogBackend;
 import step.streaming.server.test.TestingStorageBackend;
-import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.*;
 
 import java.io.*;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import static org.junit.Assert.*;
+import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN;
 
 public class DefaultStreamingResourceManagerTest {
 
@@ -35,7 +38,8 @@ public class DefaultStreamingResourceManagerTest {
         catalogBackend = new InMemoryCatalogBackend();
         manager = new DefaultStreamingResourceManager(catalogBackend, storageBackend,
                 s -> null,
-                null
+                null,
+                Executors.newFixedThreadPool(2)
         );
     }
 
@@ -87,11 +91,11 @@ public class DefaultStreamingResourceManagerTest {
                 Thread chunk2Writer = createChunkWriter(out2, 2, 5);
 
                 chunk1Writer.start();
-                manager.writeChunk(resourceId, in1);
+                manager.writeChunk(resourceId, in1, false);
                 chunk1Writer.join();
 
                 chunk2Writer.start();
-                manager.writeChunk(resourceId, in2);
+                manager.writeChunk(resourceId, in2, true);
                 chunk2Writer.join();
 
                 // Finalize
@@ -137,7 +141,7 @@ public class DefaultStreamingResourceManagerTest {
 
                 chunkWriter.start();
                 FailingInputStream failingIn = new FailingInputStream(in, 37, false);
-                manager.writeChunk(resourceId, failingIn); // will receive partial data
+                manager.writeChunk(resourceId, failingIn, true); // will receive partial data
                 chunkWriter.join();
             } catch (IOException | InterruptedException ignored) {
             }
@@ -229,7 +233,7 @@ public class DefaultStreamingResourceManagerTest {
     private String uploadAndCheckSizeAndLinebreaks(String fileName, long expectedSize, long expectedNumberOfLines) throws QuotaExceededException, IOException {
         final String resourceId = manager.registerNewResource(new StreamingResourceMetadata("test.txt", TEXT_PLAIN, true), null);
         InputStream is = getClass().getClassLoader().getResourceAsStream(fileName);
-        long size = manager.writeChunk(resourceId, is);
+        long size = manager.writeChunk(resourceId, is, true);
         assertEquals(expectedSize, size);
         manager.markCompleted(resourceId);
         StreamingResourceStatus expected = new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, expectedSize, expectedNumberOfLines);
