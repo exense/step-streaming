@@ -29,7 +29,7 @@ public interface StreamingResourceManager {
 
     long writeChunk(String resourceId, InputStream input, boolean isFinal) throws IOException;
 
-    void markCompleted(String resourceId);
+    StreamingResourceStatus markCompleted(String resourceId);
 
     void markFailed(String resourceId);
 

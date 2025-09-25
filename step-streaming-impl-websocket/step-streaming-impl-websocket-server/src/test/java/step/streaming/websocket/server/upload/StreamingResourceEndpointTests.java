@@ -140,7 +140,7 @@ public class StreamingResourceEndpointTests {
     // for repeatedly running a particular test
     public void adNauseam() throws Exception {
         for (int i = 0; i < 100; ++i) {
-            testLineBasedDownload();
+            testHighLevelUploadWithSimultaneousDownloadsWithTextConversion();
             Thread.sleep(3000);
         }
     }

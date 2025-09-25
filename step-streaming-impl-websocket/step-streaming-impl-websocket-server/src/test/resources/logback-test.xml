@@ -13,4 +13,5 @@
 
 	<!-- Reduce noise -->
 	<logger name="org.eclipse.jetty" level="INFO"/>
+	<logger name="step.streaming" level="INFO"/>
 </configuration>

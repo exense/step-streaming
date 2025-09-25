@@ -193,7 +193,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     }
 
     @Override
-    public void markCompleted(String resourceId) {
+    public StreamingResourceStatus markCompleted(String resourceId) {
         try {
             StreamingResourceStatusUpdate update = getFinalStatusUpdate(resourceId, StreamingResourceTransferStatus.COMPLETED);
             StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
@@ -201,9 +201,11 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
             // just in case, if it hasn't been removed yet for whichever reason
             activeUploads.remove(resourceId);
             emitStatus(resourceId, status);
+            return status;
         } catch (IOException e) {
             logger.warn("IOException during markCompleted for {}, marking as failed instead", resourceId, e);
             markFailed(resourceId);
+            return null;
         }
     }
 

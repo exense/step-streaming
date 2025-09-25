@@ -146,10 +146,15 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                                     finishMessage.checksum, ack.checksum)));
                     return;
                 }
-                manager.markCompleted(resourceId);
+                var finalStatus = manager.markCompleted(resourceId);
+                UploadAcknowledgedMessage finalAck = ack;
+                if (finalStatus != null) {
+                    // numberOfLines may have changed during the final completion
+                    finalAck = new UploadAcknowledgedMessage(ack.size, finalStatus.getNumberOfLines(), ack.checksum);
+                }
                 state = State.FINISHED;
-                logger.info("Upload complete, sending acknowledge message: {}", ack);
-                session.getAsyncRemote().sendText(ack.toString(), result -> {
+                logger.info("Upload complete, sending acknowledge message: {}", finalAck);
+                session.getAsyncRemote().sendText(finalAck.toString(), result -> {
                     if (!result.isOK()) {
                         logger.warn("{}: failed to send upload acknowledge", resourceId, result.getException());
                     }
