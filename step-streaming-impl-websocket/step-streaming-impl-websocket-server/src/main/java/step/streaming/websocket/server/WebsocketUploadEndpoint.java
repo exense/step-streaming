@@ -304,6 +304,10 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
 
         /** Process a small batch, then either finalize, reschedule, or yield idle. */
         private void runOnce() {
+            if (ackFuture.isCompletedExceptionally()) {
+                logger.debug("Upload {} already failed, skipping work", resourceId);
+                return;
+            }
             boolean moreWork = false;
             try {
                 int processed = 0;
