@@ -1,0 +1,5 @@
+Note: this file uses LF line breaks (normal style)
+one
+two
+three
+foooooooooooooour
