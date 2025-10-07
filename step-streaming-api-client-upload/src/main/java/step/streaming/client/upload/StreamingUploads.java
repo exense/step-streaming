@@ -15,15 +15,15 @@ import java.util.Objects;
  * This class wraps a {@link StreamingUploadProvider} and exposes simplified methods
  * for initiating common types of uploads:
  * <ul>
- *   <li>Text file uploads, using a specified, or the default UTF-8 character encoding</li>
- *   <li>Binary file uploads</li>
+ *   <li>Text file uploads, using default or specified character encodings and MIME types</li>
+ *   <li>Binary file uploads using default or specified MIME types</li>
  * </ul>
  * <p>
  * Each method creates the appropriate {@link StreamingResourceMetadata} for the given file
  * and returns a {@link StreamingUpload} object that can be used to signal completion,
  * perform cancellation, and retrieve the final upload status.
  * <p>
- * For more advanced scenarios — such as initiating uploads with custom metadata or MIME types,
+ * For more advanced scenarios — such as initiating uploads with custom metadata,
  * or directly interacting with the asynchronous behavior of the upload session —
  * use the corresponding lower-level APIs.
  *
@@ -54,14 +54,14 @@ public class StreamingUploads {
     }
 
     /**
-     * Starts a streaming upload of a UTF-8 encoded text file.
+     * Starts a streaming upload of a generic UTF-8 encoded text file.
      * <p>
-     * This is a convenience method equivalent to
-     * {@link #startTextFileUpload(File, Charset)} with {@link StandardCharsets#UTF_8}.
+     * This is a convenience method equivalent to calling
+     * {@link #startTextFileUpload(File, Charset, String)} with character set {@link StandardCharsets#UTF_8} and MIME type {@code text/plain}.
      *
      * @param textFile the text file to upload.
      * @return a {@link StreamingUpload} representing the active upload.
-     * @throws QuotaExceededException if the upload failed due to quota limitations
+     * @throws QuotaExceededException if the upload failed due to quota restrictions
      * @throws IOException            if the file does not exist, cannot be read, or another I/O error occurs.
      */
     public StreamingUpload startTextFileUpload(File textFile) throws QuotaExceededException, IOException {
@@ -69,64 +69,95 @@ public class StreamingUploads {
     }
 
     /**
-     * Starts a streaming upload of a text file with the specified character encoding.
+     * Starts a streaming upload of a generic text file with the specified character set.
+     * <p>
+     * This is a convenience method equivalent to calling
+     * {@link #startTextFileUpload(File, Charset, String)} with MIME type {@code text/plain}.
+     *
+     * @param textFile the text file to upload.
+     * @param charset  the {@link Charset} of the source file; must not be {@code null}.
+     * @return a {@link StreamingUpload} representing the active upload.
+     * @throws QuotaExceededException if the upload failed due to quota restrictions
+     * @throws IOException            if the file does not exist, cannot be read, or another I/O error occurs.
+     */
+    public StreamingUpload startTextFileUpload(File textFile, Charset charset) throws QuotaExceededException, IOException {
+        return startTextFileUpload(textFile, charset, "text/plain");
+    }
+
+    /**
+     * Starts a streaming upload of a text file with the specified character encoding and MIME type.
      * <p>
      * The {@link StreamingResourceMetadata} is initialized with:
      * <ul>
      *   <li>the file's name,</li>
-     *   <li>{@link StreamingResourceMetadata.CommonMimeTypes#TEXT_PLAIN} as the MIME type,</li>
+     *   <li>the given MIME type,</li>
      *   <li>{@code true} for line access support.</li>
      * </ul>
      * The {@link StreamingUploadProvider#startLiveTextFileUpload(File, StreamingResourceMetadata, Charset)}
      * method is then invoked, and the resulting {@link StreamingUploadSession} is wrapped in a {@link StreamingUpload}.
      * <p>
-     * If you need more control over the metadata, like specifying a different filename or MIME type, directly use
+     * If you need more control over the metadata, like specifying a different filename, directly use
      * {@link StreamingUploadProvider#startLiveTextFileUpload(File, StreamingResourceMetadata, Charset) of the provider.
-     *
+     * <p>
      * @param textFile the text file to upload.
      * @param charset  the {@link Charset} of the source file; must not be {@code null}.
      * @return a {@link StreamingUpload} representing the active upload.
-     * @throws QuotaExceededException if the upload failed due to quota limitations
+     * @throws QuotaExceededException if the upload failed due to quota restrictions
      * @throws NullPointerException   if {@code charset} is {@code null}
      * @throws IOException            if the file does not exist, cannot be read, or another I/O error occurs
      */
-    public StreamingUpload startTextFileUpload(File textFile, Charset charset) throws QuotaExceededException, IOException {
+    public StreamingUpload startTextFileUpload(File textFile, Charset charset, String mimeType) throws QuotaExceededException, IOException {
         StreamingUploadSession session = provider.startLiveTextFileUpload(
                 textFile,
                 new StreamingResourceMetadata(
                         textFile.getName(),
-                        StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN,
+                        mimeType,
                         true),
                 Objects.requireNonNull(charset));
         return new StreamingUpload(session);
     }
 
     /**
-     * Starts a streaming upload of a binary file.
+     * Starts a streaming upload of a generic binary file.
      * <p>
-     * The {@link StreamingResourceMetadata} is initialized with:
+     * This is a convenience method equivalent to calling
+     * {@link #startBinaryFileUpload(File, String)} with the MIME type {@code application/octet-stream}.
+     *
+     * @param file the binary file to upload.
+     * @return a {@link StreamingUpload} representing the active upload.
+     * @throws QuotaExceededException if the upload failed due to quota restrictions
+     * @throws IOException            if the file does not exist, cannot be read, or another I/O error occurs
+     */
+    public StreamingUpload startBinaryFileUpload(File file) throws QuotaExceededException, IOException {
+        return startBinaryFileUpload(file, "application/octet-stream");
+    }
+
+    /**
+     * Starts a streaming upload of a binary file with a specified MIME type.
+     * <p>
+     * The corresponding {@link StreamingResourceMetadata} is initialized with:
      * <ul>
      *   <li>the file's name,</li>
-     *   <li>{@link StreamingResourceMetadata.CommonMimeTypes#APPLICATION_OCTET_STREAM} as the MIME type,</li>
+     *   <li>the specified MIME type,</li>
      *   <li>{@code false} for line access support.</li>
      * </ul>
      * The {@link StreamingUploadProvider#startLiveBinaryFileUpload(File, StreamingResourceMetadata)}
      * method is then invoked, and the resulting {@link StreamingUploadSession} is wrapped in a {@link StreamingUpload}.
      * <p>
-     * If you need more control over the metadata, like specifying a different filename or MIME type, directly use
+     * If you need more control over the metadata, like specifying a different filename, directly use
      * {@link StreamingUploadProvider#startLiveBinaryFileUpload(File, StreamingResourceMetadata)} of the provider.
      *
      * @param file the binary file to upload.
      * @return a {@link StreamingUpload} representing the active upload.
-     * @throws QuotaExceededException if the upload failed due to quota limitations
+     * @throws QuotaExceededException if the upload failed due to quota restrictions
      * @throws IOException            if the file does not exist, cannot be read, or another I/O error occurs
      */
-    public StreamingUpload startBinaryFileUpload(File file) throws QuotaExceededException, IOException {
+    public StreamingUpload startBinaryFileUpload(File file, String mimeType) throws QuotaExceededException, IOException {
         StreamingUploadSession session = provider.startLiveBinaryFileUpload(
                 file,
                 new StreamingResourceMetadata(
                         file.getName(),
-                        StreamingResourceMetadata.CommonMimeTypes.APPLICATION_OCTET_STREAM,
+                        mimeType,
                         false));
         return new StreamingUpload(session);
     }

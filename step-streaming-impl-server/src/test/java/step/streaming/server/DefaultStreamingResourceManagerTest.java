@@ -5,8 +5,6 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.function.ThrowingRunnable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceStatus;
@@ -23,11 +21,10 @@ import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import static org.junit.Assert.*;
-import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN;
 
 public class DefaultStreamingResourceManagerTest {
 
-    private static final Logger log = LoggerFactory.getLogger(DefaultStreamingResourceManagerTest.class);
+    private static final String TEXT_PLAIN = "text/plain";
     private TestingStorageBackend storageBackend;
     private InMemoryCatalogBackend catalogBackend;
     private DefaultStreamingResourceManager manager;

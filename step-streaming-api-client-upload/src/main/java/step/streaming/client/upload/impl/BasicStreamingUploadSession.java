@@ -11,8 +11,10 @@ import step.streaming.util.ThrowingConsumer;
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.*;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 
 public class BasicStreamingUploadSession extends AbstractStreamingTransfer implements StreamingUploadSession {
     protected final EndOfInputSignal endOfInputSignal;

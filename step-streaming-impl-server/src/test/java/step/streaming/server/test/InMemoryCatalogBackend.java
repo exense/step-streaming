@@ -7,9 +7,7 @@ import step.streaming.common.StreamingResourceUploadContext;
 import step.streaming.server.StreamingResourceStatusUpdate;
 import step.streaming.server.StreamingResourcesCatalogBackend;
 
-import java.io.IOException;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 

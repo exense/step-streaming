@@ -6,7 +6,6 @@ import step.streaming.data.EndOfInputSignal;
 
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**

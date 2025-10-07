@@ -2,7 +2,6 @@ package step.streaming.websocket.protocol.download;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import step.streaming.common.StreamingResourceStatus;
 
 import java.util.List;
 
