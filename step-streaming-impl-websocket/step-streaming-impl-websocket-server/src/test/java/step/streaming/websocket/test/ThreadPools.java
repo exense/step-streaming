@@ -1,4 +1,4 @@
-package step.streaming.util;
+package step.streaming.websocket.test;
 
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
