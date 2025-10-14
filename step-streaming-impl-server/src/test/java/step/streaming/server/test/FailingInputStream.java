@@ -4,10 +4,6 @@ import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
-import java.io.FilterInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-
 /**
  * An InputStream that simulates an IOException after a given number of bytes or optionally on close().
  * Useful for testing failure scenarios in streaming pipelines.

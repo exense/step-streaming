@@ -3,7 +3,6 @@ package step.streaming.client.upload;
 import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceMetadata;
 
-import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;

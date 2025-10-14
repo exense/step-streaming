@@ -23,7 +23,7 @@ import step.streaming.data.*;
 import step.streaming.server.URITemplateBasedReferenceProducer;
 import step.streaming.server.test.InMemoryCatalogBackend;
 import step.streaming.server.test.TestingStorageBackend;
-import step.streaming.util.ThreadPools;
+import step.streaming.websocket.test.ThreadPools;
 import step.streaming.websocket.client.upload.WebsocketUploadClient;
 import step.streaming.websocket.client.upload.WebsocketUploadProvider;
 import step.streaming.websocket.client.upload.WebsocketUploadSession;
@@ -48,10 +48,12 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static org.junit.Assert.*;
-import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.APPLICATION_OCTET_STREAM;
-import static step.streaming.common.StreamingResourceMetadata.CommonMimeTypes.TEXT_PLAIN;
 
 public class StreamingResourceEndpointTests {
+
+    private static final String TEXT_PLAIN = "text/plain";
+    private static final String APPLICATION_OCTET_STREAM = "application/octet-stream";
+
 
     // aaaaaaargh... surefire consistently messes up these tests because it parallelizes them!
     private static final Lock CLASS_LOCK = new ReentrantLock();
