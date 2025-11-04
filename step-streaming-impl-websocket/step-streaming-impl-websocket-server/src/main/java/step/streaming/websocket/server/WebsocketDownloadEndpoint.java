@@ -122,8 +122,7 @@ public class WebsocketDownloadEndpoint extends HalfCloseCompatibleEndpoint {
         enterDownloadingState();
         logger.debug("Received request for {} lines starting at line index {} for resource {}", request.linesCount, request.startingLineIndex, resourceId);
         try {
-            Stream<String> linesStream = manager.getLines(resourceId, request.startingLineIndex, request.linesCount);
-            List<String> linesList = linesStream.collect(Collectors.toList());
+            List<String> linesList = manager.getLines(resourceId, request.startingLineIndex, request.linesCount);
             logger.debug("Sent {} lines from resource {}", linesList.size(), resourceId);
             session.getBasicRemote().sendText(new LinesMessage(linesList).toString());
         } catch (Exception e) {

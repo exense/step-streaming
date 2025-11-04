@@ -6,6 +6,9 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -132,7 +135,7 @@ public class LinebreakIndexFile implements AutoCloseable, LinebreakIndex {
     }
 
     @Override
-    public Stream<Long> getLinebreakPositions(long startIndex, long count) throws IOException {
+    public List<Long> getLinebreakPositions(long startIndex, long count) throws IOException {
         long entries = getTotalEntries();
 
         if (startIndex < 0 || count < 0 || startIndex + count > entries) {
@@ -144,14 +147,13 @@ public class LinebreakIndexFile implements AutoCloseable, LinebreakIndex {
 
         raf.seek(startIndex * ENTRY_SIZE);
 
-        return Stream.generate(() -> {
-            try {
-                raf.readFully(entryBuffer);
-                return decodeFromBuffer();
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        }).limit(count);
+        List<Long> positions = new ArrayList<>((int) count);
+        for (long i = 0; i < count; i++) {
+            raf.readFully(entryBuffer);
+            positions.add(decodeFromBuffer());
+        }
+
+        return positions;
     }
 
     @Override
