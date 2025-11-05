@@ -68,9 +68,9 @@ public class LinebreakIndexFileTests {
         index = new LinebreakIndexFile(rawIndexFile, baseOffset, LinebreakIndexFile.Mode.READ);
         assertEquals(4, index.getTotalEntries());
         assertEquals(4367 + baseOffset, index.getLinebreakPosition(3));
-        assertEquals(List.of(), index.getLinebreakPositions(0, 0).collect(Collectors.toList()));
-        assertEquals(List.of(23L, 42L), index.getLinebreakPositions(0, 2).map(l -> l - baseOffset).collect(Collectors.toList()));
-        assertEquals(List.of(42L, 3815L, 4367L), index.getLinebreakPositions(1, 3).map(l -> l - baseOffset).collect(Collectors.toList()));
+        assertEquals(List.of(), index.getLinebreakPositions(0, 0));
+        assertEquals(List.of(23L, 42L), index.getLinebreakPositions(0, 2).stream().map(l -> l - baseOffset).collect(Collectors.toList()));
+        assertEquals(List.of(42L, 3815L, 4367L), index.getLinebreakPositions(1, 3).stream().map(l -> l - baseOffset).collect(Collectors.toList()));
         try {
             index.addLinebreakPosition(0L);
             fail("Expected IOException - trying to write to read-only index");
@@ -116,8 +116,7 @@ public class LinebreakIndexFileTests {
                             long tailStart = Math.max(0, available - assertTailLength);
                             long tailCount = available - tailStart;
                             List<Long> actual = reader
-                                    .getLinebreakPositions(tailStart, (int) tailCount)
-                                    .collect(Collectors.toList());
+                                    .getLinebreakPositions(tailStart, (int) tailCount);
 
                             // System.out.println(actual); // in case someone wants to debug :-D -- examples:
                             // beginning: [1000, 1010, 1020, 1030, 1040, 1050]
@@ -132,8 +131,7 @@ public class LinebreakIndexFileTests {
                             long tailStart = Math.max(0, available - assertTailLength);
                             long tailCount = available - tailStart;
                             List<Long> actualFromLongLived = longLivedReader
-                                    .getLinebreakPositions(tailStart, (int) tailCount)
-                                    .collect(Collectors.toList());
+                                    .getLinebreakPositions(tailStart, (int) tailCount);
 
                             for (int i = 0; i < actualFromLongLived.size(); i++) {
                                 long expected = baseOffset + (tailStart + i) * 10L;
@@ -179,7 +177,7 @@ public class LinebreakIndexFileTests {
             Assert.assertTrue("Writing data took more than 10 seconds", d < 10000);
 
             d = System.currentTimeMillis();
-            Assert.assertEquals(count, index.getLinebreakPositions(0, count).count());
+            Assert.assertEquals(count, index.getLinebreakPositions(0, count).size());
             d = System.currentTimeMillis() - d;
             System.out.printf("reading %d entries sequentially took %d ms%n", count, d);
             // usually around 150-200 ms

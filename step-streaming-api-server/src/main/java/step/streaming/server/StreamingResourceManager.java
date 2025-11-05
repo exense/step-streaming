@@ -7,9 +7,9 @@ import step.streaming.common.StreamingResourceStatus;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
-import java.util.stream.Stream;
 
 /**
  * Manager coordinating server-side operations related to streaming resources.
@@ -43,7 +43,7 @@ public interface StreamingResourceManager {
 
     StreamingResourceReference getReferenceFor(String resourceId);
 
-    Stream<Long> getLinebreakPositions(String resourceId, long startingLinebreakIndex, long count) throws IOException;
+    List<Long> getLinebreakPositions(String resourceId, long startingLinebreakIndex, long count) throws IOException;
 
-    Stream<String> getLines(String resourceId, long startingLineIndex, long count) throws IOException;
+    List<String> getLines(String resourceId, long startingLineIndex, long count) throws IOException;
 }
