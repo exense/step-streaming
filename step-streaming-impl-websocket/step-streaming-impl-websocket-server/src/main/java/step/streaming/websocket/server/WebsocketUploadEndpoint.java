@@ -333,7 +333,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         }
 
         /**
-         * Drain the queue in batches until no more signals remain (wip goes to 0).
+         * Drain the queue in batches until no more signals remain (activeWork goes to 0).
          */
         private void processWork() {
             try {
@@ -341,7 +341,6 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
 
                 // Run while work is signalled and the upload hasn't completed
                 while (signalsToConsume > 0 && !ackFuture.isDone()) {
-                    int batchChunkCount = 0;
                     int batchByteCount = 0;
                     ByteArrayOutputStream batchBytes = new ByteArrayOutputStream();
 
@@ -354,12 +353,11 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                         md5.update(chunk);
                         batchBytes.write(chunk, 0, chunk.length);
                         batchByteCount += chunk.length;
-                        batchChunkCount++;
                         // Release capacity for each processed chunk
                         queueSlots.release();
                     }
 
-                    if (batchChunkCount > 0) {
+                    if (batchByteCount > 0) {
                         boolean isLastBatch = closed && bytesQueue.isEmpty();
                         try (InputStream combined = new ByteArrayInputStream(batchBytes.toByteArray())) {
                             manager.writeChunk(resourceId, combined, isLastBatch);
@@ -383,6 +381,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                             Long lines = status.getNumberOfLines();
                             if (!ackFuture.isDone()) {
                                 // this will exit the loop and method
+                                // (but we let the loop do it to keep activeWork in sync)
                                 ackFuture.complete(new UploadAcknowledgedMessage(bytesWritten, lines, checksum));
                             }
                         }
