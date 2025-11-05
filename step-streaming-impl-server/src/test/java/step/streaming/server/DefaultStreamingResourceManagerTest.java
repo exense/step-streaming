@@ -9,6 +9,7 @@ import step.streaming.common.QuotaExceededException;
 import step.streaming.common.StreamingResourceMetadata;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
+import step.streaming.server.data.LinebreakIndexFile;
 import step.streaming.server.test.FailingInputStream;
 import step.streaming.server.test.InMemoryCatalogBackend;
 import step.streaming.server.test.TestingStorageBackend;
@@ -164,12 +165,12 @@ public class DefaultStreamingResourceManagerTest {
         assertException(() -> manager.getLinebreakPositions(id, 5, 2), "Linebreak index out of bounds: 5; acceptable values: [0, 5[");
         assertException(() -> manager.getLinebreakPositions(id, 4, 2), "Starting index + count exceeds number of entries: 4 + 2 > 5");
         // requesting an empty stream (index doesn't really matter, should just be within bounds)
-        assertEquals(List.of(), manager.getLinebreakPositions(id, 2, 0).collect(Collectors.toList()));
-        assertEquals(List.of(55L, 60L, 65L, 71L, 80L), manager.getLinebreakPositions(id, 0, 5).collect(Collectors.toList()));
-        assertEquals(List.of(65L, 71L), manager.getLinebreakPositions(id, 2, 2).collect(Collectors.toList()));
-        assertEquals("Note: This file uses CR/LF line breaks (Windows-style)\r\n", manager.getLines(id, 0, 1).collect(Collectors.toList()).get(0));
-        assertEquals("uno\r\n", manager.getLines(id, 1, 1).collect(Collectors.toList()).get(0));
-        assertEquals(List.of("dos\r\n", "tres\r\n"), manager.getLines(id, 2, 2).collect(Collectors.toList()));
+        assertEquals(List.of(), manager.getLinebreakPositions(id, 2, 0));
+        assertEquals(List.of(55L, 60L, 65L, 71L, 80L), manager.getLinebreakPositions(id, 0, 5));
+        assertEquals(List.of(65L, 71L), manager.getLinebreakPositions(id, 2, 2));
+        assertEquals("Note: This file uses CR/LF line breaks (Windows-style)\r\n", manager.getLines(id, 0, 1).get(0));
+        assertEquals("uno\r\n", manager.getLines(id, 1, 1).get(0));
+        assertEquals(List.of("dos\r\n", "tres\r\n"), manager.getLines(id, 2, 2));
     }
 
 
@@ -177,23 +178,23 @@ public class DefaultStreamingResourceManagerTest {
     public void testLineIndexingWithoutFinalLinebreak() throws Exception {
         String id = uploadAndCheckSizeAndLinebreaks("fileWithoutFinalLineBreak.txt", 82, 5L);
         // here the manager has to manage the missing last linebreak by itself (index only contains 4)
-        assertEquals(List.of(50L, 54L, 58L, 64L, 81L), manager.getLinebreakPositions(id, 0, 5).collect(Collectors.toList()));
-        assertEquals(List.of("two\n", "three\n", "foooooooooooooour" /* note: no trailing LB */), manager.getLines(id, 2, 3).collect(Collectors.toList()));
+        assertEquals(List.of(50L, 54L, 58L, 64L, 81L), manager.getLinebreakPositions(id, 0, 5));
+        assertEquals(List.of("two\n", "three\n", "foooooooooooooour" /* note: no trailing LB */), manager.getLines(id, 2, 3));
 
     }
 
     @Test
     public void testLineIndexingSingleLineWithFinalLinebreak() throws Exception {
         String id = uploadAndCheckSizeAndLinebreaks("singleLineWithLinebreak.txt", 23, 1);
-        assertEquals(List.of(22L), manager.getLinebreakPositions(id, 0, 1).collect(Collectors.toList()));
-        assertEquals(List.of("This is a single line.\n"), manager.getLines(id, 0, 1).collect(Collectors.toList()));
+        assertEquals(List.of(22L), manager.getLinebreakPositions(id, 0, 1));
+        assertEquals(List.of("This is a single line.\n"), manager.getLines(id, 0, 1));
     }
 
     @Test
     public void testLineIndexingSingleLineWithoutFinalLinebreak() throws Exception {
         String id = uploadAndCheckSizeAndLinebreaks("singleLineWithoutLinebreak.txt", 43, 1);
-        assertEquals(List.of(42L), manager.getLinebreakPositions(id, 0, 1).collect(Collectors.toList()));
-        assertEquals(List.of("This is a single line without a line break."), manager.getLines(id, 0, 1).collect(Collectors.toList()));
+        assertEquals(List.of(42L), manager.getLinebreakPositions(id, 0, 1));
+        assertEquals(List.of("This is a single line without a line break."), manager.getLines(id, 0, 1));
     }
 
     @Test
@@ -204,8 +205,8 @@ public class DefaultStreamingResourceManagerTest {
     @Test
     public void testLineIndexingLinebreakOnly() throws Exception {
         String id = uploadAndCheckSizeAndLinebreaks("linebreakOnly.txt", 1, 1);
-        assertEquals(List.of(0L), manager.getLinebreakPositions(id, 0, 1).collect(Collectors.toList()));
-        assertEquals(List.of("\n"), manager.getLines(id, 0, 1).collect(Collectors.toList()));
+        assertEquals(List.of(0L), manager.getLinebreakPositions(id, 0, 1));
+        assertEquals(List.of("\n"), manager.getLines(id, 0, 1));
     }
 
     @Test
@@ -215,7 +216,9 @@ public class DefaultStreamingResourceManagerTest {
         String id = uploadAndCheckSizeAndLinebreaks("linebreakOnly.txt", 1, 1);
         assertEquals(1, catalogBackend.catalog.size());
         assertEquals(1, storageBackend.getCurrentSize(id));
-        assertNotNull(storageBackend.getLinebreakIndex(id));
+        try (LinebreakIndexFile index = storageBackend.getLinebreakIndex(id)) {
+            assertNotNull(index);
+        }
 
         manager.deleteResource(id);
         assertEquals(0, catalogBackend.catalog.size());
