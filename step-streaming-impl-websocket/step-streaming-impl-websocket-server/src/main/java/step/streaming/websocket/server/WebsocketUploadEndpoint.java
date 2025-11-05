@@ -320,7 +320,9 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
          * Ensure a single drain task is scheduled; coalesces multiple signals.
          */
         private void signalWork() {
-            // invariant: activeWork == 0 means "nothing is currently scheduled or working"
+            // Invariant: activeWork == 0 means "nothing is currently scheduled or working"; in addition,
+            // only exactly one worker will ever enter and schedule processWork at the same time - this is guaranteed
+            // by the semaphore which can be returned to 0 only *within* that processWork() call before it exits.
             if (activeWork.getAndIncrement() == 0) {
                 try {
                     uploadsPool.execute(this::processWork);
@@ -391,7 +393,12 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                     }
                 }
             } catch (Throwable t) {
-                ackFuture.completeExceptionally(t);
+                if (!ackFuture.isDone()) {
+                    ackFuture.completeExceptionally(t);
+                }
+                // Abnormal termination — explicitly restore invariant; this is mostly for consistency, as
+                // after the result is completed with an exception, we're not expecting any more work anyway.
+                activeWork.set(0);
             }
         }
 
