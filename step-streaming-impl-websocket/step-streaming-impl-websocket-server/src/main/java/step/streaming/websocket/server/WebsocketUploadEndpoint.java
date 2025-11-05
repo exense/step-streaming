@@ -272,22 +272,36 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             this.uploadsPool = uploadsPool;
         }
 
-        /** Enqueue a chunk; bounded queue provides backpressure to the Jetty thread. */
+        /**
+         * Enqueue a chunk; bounded queue provides backpressure to the Jetty thread.
+         */
         void put(byte[] chunk) throws InterruptedException {
-            // try non-blocking first; if full, block this one connection briefly
+            // Ensure a consumer is (or will be) running BEFORE risking any blocking put().
+            // This prevents the "lost kick" deadlock where a producer blocks with no consumer scheduled (SED-4327)
+            ensureConsumerRunning();
+
+            // Fast path: non-blocking offer first.
             if (!queue.offer(chunk)) {
+                // Queue full – defensively kick again (harmless if already running)
+                ensureConsumerRunning();
+                // Blocking put – by now a consumer should already be active.
                 queue.put(chunk);
             }
-            schedule();
+            // Just to be extra-sure that our chunk will be processed
+            ensureConsumerRunning();
         }
 
-        /** Signal that no more input will arrive. */
+        /**
+         * Signal that no more input will arrive.
+         */
         void closeInput() {
             closed = true;
-            schedule();
+            ensureConsumerRunning();
         }
 
-        /** Start draining; returns a future that completes once all bytes are written and ack is ready. */
+        /**
+         * Start draining; returns a future that completes once all bytes are written and ack is ready.
+         */
         CompletableFuture<UploadAcknowledgedMessage> startConsumer(StreamingResourceManager manager) {
             this.manager = manager;
             try {
@@ -296,18 +310,29 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 throw new IllegalStateException("MD5 not available", e);
             }
             this.ackFuture = new CompletableFuture<>();
-            schedule();
+            ensureConsumerRunning();
             return ackFuture;
         }
 
-        /** Ensure exactly one runner is active; if not, enqueue one hop. */
-        private void schedule() {
+        /**
+         * Ensure that a consumer task is running (or will run soon) to drain the upload queue.
+         * Safe to call redundantly. Acts as a one-runner activation guard.
+         */
+        private void ensureConsumerRunning() {
             if (running.compareAndSet(false, true)) {
-                uploadsPool.execute(this::runOnce);
+                try {
+                    uploadsPool.execute(this::runOnce);
+                } catch (RuntimeException ex) {
+                    // If the executor rejects (shutdown, etc.), don't leave 'running' stuck at true.
+                    running.set(false);
+                    throw ex;
+                }
             }
         }
 
-        /** Process a small batch, then either finalize, reschedule, or yield idle. */
+        /**
+         * Process a small batch, then either finalize, reschedule, or yield idle.
+         */
         private void runOnce() {
             if (ackFuture.isCompletedExceptionally()) {
                 logger.debug("Upload {} already failed, skipping work", resourceId);
@@ -358,10 +383,14 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             } catch (Throwable t) {
                 ackFuture.completeExceptionally(t);
             } finally {
-                // yield: drop the running flag, and if work showed up in the meantime, re-arm
+                // Yield: drop the running flag, and if work arrived meanwhile, re-arm safely.
                 running.set(false);
                 if ((moreWork || !queue.isEmpty()) && running.compareAndSet(false, true)) {
-                    uploadsPool.execute(this::runOnce);
+                    try {
+                        uploadsPool.execute(this::runOnce);
+                    } catch (RuntimeException ex) {
+                        running.set(false);
+                        logger.error("Unexpected: executor rejected follow-up run (resourceId={})",resourceId);                    }
                 }
             }
         }
