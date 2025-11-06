@@ -258,7 +258,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
      */
     private static final class UploadPipeline {
         private static final int QUEUE_SLOTS = 128;             // How many (Jetty, incoming) chunks for a single upload can we enqueue?
-        private static final int MAX_BATCH_BYTES = 128 * 1024;   // max bytes per write (for fairness between multiple uploads)
+        private static final int MAX_BATCH_BYTES = 256 * 1024;   // max bytes per write (for fairness between multiple uploads)
 
         private final String resourceId;
         private final ExecutorService uploadsPool;
@@ -346,8 +346,10 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                     int batchByteCount = 0;
                     ByteArrayOutputStream batchBytes = new ByteArrayOutputStream();
 
-                    // Batch up to N chunks / size
-                    while (batchByteCount < MAX_BATCH_BYTES) {
+                    // Batch up to MAX_BATCH_BYTES for fairness; if closed (all data
+                    // has arrived), we must keep processing until everything is drained,
+                    // as there will be no more signals "kicking" new work iterations
+                    while (closed || batchByteCount < MAX_BATCH_BYTES) {
                         byte[] chunk = bytesQueue.poll();
                         if (chunk == null) {
                             break;
@@ -368,29 +370,26 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                         if (isLastBatch) {
                             finalSent = true;
                         }
-                    } else {
-                        // No chunks to process right now, but maybe we need to signal EOF to the manager
-                        if (closed) {
-                            // Finalize once: empty final write if not sent yet, compute checksum, complete ack
-                            if (!finalSent) {
-                                try (InputStream empty = new ByteArrayInputStream(new byte[0])) {
-                                    manager.writeChunk(resourceId, empty, true);
-                                }
-                                finalSent = true;
-                            }
-                            String checksum = toHex(md5.digest());
-                            StreamingResourceStatus status = manager.getStatus(resourceId);
-                            Long lines = status.getNumberOfLines();
-                            if (!ackFuture.isDone()) {
-                                // this will exit the loop and method
-                                // (but we let the loop do it to keep activeWork in sync)
-                                ackFuture.complete(new UploadAcknowledgedMessage(bytesWritten, lines, checksum));
-                            }
-                        }
-                        // This will keep the outer loop active as long as at least one
-                        // other signal for "hey, there's work" was present (and consume them all at once)
-                        signalsToConsume = activeWork.addAndGet(-signalsToConsume);
                     }
+                    if (closed) {
+                        // Finalize once: empty final write if not sent yet (e.g. 0-byte uploads), compute checksum, complete ack
+                        if (!finalSent) {
+                            try (InputStream empty = new ByteArrayInputStream(new byte[0])) {
+                                manager.writeChunk(resourceId, empty, true);
+                            }
+                            finalSent = true;
+                        }
+                        String checksum = toHex(md5.digest());
+                        StreamingResourceStatus status = manager.getStatus(resourceId);
+                        Long lines = status.getNumberOfLines();
+                        if (!ackFuture.isDone()) {
+                            // Completing the future will cause the while-loop to exit on its next check
+                            ackFuture.complete(new UploadAcknowledgedMessage(bytesWritten, lines, checksum));
+                        }
+                    }
+                    // This will keep the outer loop active as long as at least one
+                    // other signal for "hey, there's work" was present (but consume all of them at once)
+                    signalsToConsume = activeWork.addAndGet(-signalsToConsume);
                 }
             } catch (Throwable t) {
                 if (!ackFuture.isDone()) {
