@@ -257,22 +257,13 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
      * <p>Thread-safe and non-blocking except for producer-side backpressure.
      */
     private static final class UploadPipeline {
-//        private static final int QUEUE_SLOTS = 128;             // How many (Jetty, incoming) chunks for a single upload can we enqueue?
-//        private static final int MAX_BATCH_BYTES = 256 * 1024;   // max bytes per write (for fairness between multiple uploads)
-
         private final String resourceId;
-        //        private final ExecutorService uploadsPool;
         private final StreamingResourceManager manager;
 
-        // Capacity/backpressure & non-blocking queue
-        //      private final Semaphore queueSlots = new Semaphore(QUEUE_SLOTS);
-        private final ConcurrentLinkedQueue<byte[]> bytesQueue = new ConcurrentLinkedQueue<>();
-        private final AtomicLong queuedBytes = new AtomicLong(0);
+        private final ConcurrentLinkedQueue<byte[]> chunksQueue = new ConcurrentLinkedQueue<>();
+        private final AtomicLong queuedBytes = new AtomicLong(0); // only informational
         private final AtomicLong bytesWritten = new AtomicLong(0);
         private volatile long lastWriteTimestamp = 0;
-
-        // Work-in-progress counter; >0 means a drain task is scheduled/running
-//        private final AtomicInteger activeWork = new AtomicInteger(0);
 
         private volatile boolean closed;
 
@@ -290,7 +281,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             }
         }
 
-        private static final long maxQueueSize = 1024;// * 1024;
+        private static final long maxQueueSize = 256 * 1024;
 
         /**
          * Start; returns future that completes once all bytes are written and ack is ready.
@@ -300,54 +291,52 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             return ackFuture;
         }
 
-        // These calls are guaranteed (by jetty) to never arrive concurrently, and in the correct order.
-        // Therefore, synchronization is not required.
-        void put(byte[] chunk) {
-            bytesQueue.offer(chunk);
+        synchronized void put(byte[] chunk) {
+            chunksQueue.offer(chunk);
             long now = System.currentTimeMillis();
             long newQueueSize = queuedBytes.addAndGet(chunk.length);
             if (newQueueSize >= maxQueueSize || now - lastWriteTimestamp >= 1000) {
                 lastWriteTimestamp = now;
-                process();
+                processQueue();
             } else {
-                logger.error("{} Q: Queue size now {}, chunks={}", resourceId, queuedBytes.get(), bytesQueue.size());
+                if (logger.isDebugEnabled()) {
+                    logger.debug("{} Q: Queue size now {}, chunks={}", resourceId, queuedBytes.get(), chunksQueue.size());
+                }
             }
         }
 
-        void closeInput() {
+        synchronized void closeInput() {
             closed = true;
-            process();
+            processQueue();
         }
 
-        private void process() {
+        private void processQueue() {
             if (!ackFuture.isDone()) {
                 try {
-                    long bytesToWrite = queuedBytes.get();
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
                     long processed = 0;
-                    while (processed < bytesToWrite) {
-                        byte[] chunk = bytesQueue.poll();
-                        if (chunk == null) {
-                            break;
-                        }
+                    for (byte[] chunk = chunksQueue.poll(); chunk != null; chunk = chunksQueue.poll()) {
                         md5.update(chunk);
-                        baos.write(chunk);
+                        bytes.write(chunk);
                         processed += chunk.length;
                     }
-                    try (InputStream combined = new ByteArrayInputStream(baos.toByteArray())) {
-                        manager.writeChunk(resourceId, combined, closed);
-                    }
-                    queuedBytes.addAndGet(-processed);
-                    bytesWritten.addAndGet(processed);
-                    if (logger.isDebugEnabled()) {
-                        logger.debug("{} D: Queue size now {}, chunks={}", resourceId, queuedBytes.get(), bytesQueue.size());
-                    }
-                    if (closed) {
-                        String checksum = toHex(md5.digest());
-                        StreamingResourceStatus status = manager.getStatus(resourceId);
-                        Long lines = status.getNumberOfLines();
-                        if (!ackFuture.isDone()) {
-                            ackFuture.complete(new UploadAcknowledgedMessage(bytesWritten.get(), lines, checksum));
+                    if (processed > 0 || closed) {
+                        try (InputStream combined = new ByteArrayInputStream(bytes.toByteArray())) {
+                            manager.writeChunk(resourceId, combined, closed);
+                        }
+                        queuedBytes.addAndGet(-processed);
+                        bytesWritten.addAndGet(processed);
+                        if (logger.isDebugEnabled()) {
+                            // unless something is horribly wrong, queue size should be back to 0
+                            logger.debug("{} D: Queue size now {}, chunks={}", resourceId, queuedBytes.get(), chunksQueue.size());
+                        }
+                        if (closed) {
+                            String checksum = toHex(md5.digest());
+                            StreamingResourceStatus status = manager.getStatus(resourceId);
+                            Long lines = status.getNumberOfLines();
+                            if (!ackFuture.isDone()) {
+                                ackFuture.complete(new UploadAcknowledgedMessage(bytesWritten.get(), lines, checksum));
+                            }
                         }
                     }
                 } catch (Throwable e) {
