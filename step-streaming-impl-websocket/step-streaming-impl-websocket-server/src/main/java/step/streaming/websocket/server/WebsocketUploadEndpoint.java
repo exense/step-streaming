@@ -18,7 +18,7 @@ import java.security.MessageDigest;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     public static final String DEFAULT_ENDPOINT_URL = "/ws/streaming/upload";
@@ -257,30 +257,30 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
      * <p>Thread-safe and non-blocking except for producer-side backpressure.
      */
     private static final class UploadPipeline {
-        private static final int QUEUE_SLOTS = 128;             // How many (Jetty, incoming) chunks for a single upload can we enqueue?
-        private static final int MAX_BATCH_BYTES = 256 * 1024;   // max bytes per write (for fairness between multiple uploads)
+//        private static final int QUEUE_SLOTS = 128;             // How many (Jetty, incoming) chunks for a single upload can we enqueue?
+//        private static final int MAX_BATCH_BYTES = 256 * 1024;   // max bytes per write (for fairness between multiple uploads)
 
         private final String resourceId;
-        private final ExecutorService uploadsPool;
+        //        private final ExecutorService uploadsPool;
         private final StreamingResourceManager manager;
 
         // Capacity/backpressure & non-blocking queue
-        private final Semaphore queueSlots = new Semaphore(QUEUE_SLOTS);
+        //      private final Semaphore queueSlots = new Semaphore(QUEUE_SLOTS);
         private final ConcurrentLinkedQueue<byte[]> bytesQueue = new ConcurrentLinkedQueue<>();
+        private final AtomicLong queuedBytes = new AtomicLong(0);
+        private final AtomicLong bytesWritten = new AtomicLong(0);
+        private volatile long lastWriteTimestamp = 0;
 
         // Work-in-progress counter; >0 means a drain task is scheduled/running
-        private final AtomicInteger activeWork = new AtomicInteger(0);
+//        private final AtomicInteger activeWork = new AtomicInteger(0);
 
         private volatile boolean closed;
 
         private final MessageDigest md5;
-        private long bytesWritten;
-        private boolean finalSent;
         private CompletableFuture<UploadAcknowledgedMessage> ackFuture;
 
         UploadPipeline(String resourceId, ExecutorService uploadsPool, StreamingResourceManager manager) {
             this.resourceId = resourceId;
-            this.uploadsPool = uploadsPool;
             this.manager = manager;
             try {
                 this.md5 = java.security.MessageDigest.getInstance("MD5");
@@ -290,114 +290,69 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             }
         }
 
-        /**
-         * Enqueue a chunk; bounded by capacity (backpressure).
-         */
-        void put(byte[] chunk) throws InterruptedException {
-            queueSlots.acquire();
-            bytesQueue.offer(chunk);
-            signalWork();
-        }
-
-        /**
-         * No more input; trigger finalization when queue drains.
-         */
-        void closeInput() {
-            closed = true;
-            signalWork();
-        }
+        private static final long maxQueueSize = 1024;// * 1024;
 
         /**
          * Start; returns future that completes once all bytes are written and ack is ready.
          */
         CompletableFuture<UploadAcknowledgedMessage> startConsumer() {
             this.ackFuture = new CompletableFuture<>();
-            signalWork();
             return ackFuture;
         }
 
-        /**
-         * Ensure a single drain task is scheduled; coalesces multiple signals.
-         */
-        private void signalWork() {
-            // Invariant: activeWork == 0 means "nothing is currently scheduled or working"; in addition,
-            // only exactly one worker will ever enter and schedule processWork at the same time - this is guaranteed
-            // by the semaphore which can be returned to 0 only *within* that processWork() call before it exits.
-            if (activeWork.getAndIncrement() == 0) {
-                try {
-                    uploadsPool.execute(this::processWork);
-                } catch (RuntimeException ex) {
-                    // Roll back the signal in case something goes wrong, to keep the invariant in place
-                    activeWork.decrementAndGet();
-                    throw ex;
-                }
+        // These calls are guaranteed (by jetty) to never arrive concurrently, and in the correct order.
+        // Therefore, synchronization is not required.
+        void put(byte[] chunk) {
+            bytesQueue.offer(chunk);
+            long now = System.currentTimeMillis();
+            long newQueueSize = queuedBytes.addAndGet(chunk.length);
+            if (newQueueSize >= maxQueueSize || now - lastWriteTimestamp >= 1000) {
+                lastWriteTimestamp = now;
+                process();
+            } else {
+                logger.error("{} Q: Queue size now {}, chunks={}", resourceId, queuedBytes.get(), bytesQueue.size());
             }
         }
 
-        /**
-         * Drain the queue in batches until no more signals remain (activeWork goes to 0).
-         */
-        private void processWork() {
-            try {
-                int signalsToConsume = 1;
+        void closeInput() {
+            closed = true;
+            process();
+        }
 
-                // Run while work is signalled and the upload hasn't completed
-                while (signalsToConsume > 0 && !ackFuture.isDone()) {
-                    int batchByteCount = 0;
-                    ByteArrayOutputStream batchBytes = new ByteArrayOutputStream();
-
-                    // Batch up to MAX_BATCH_BYTES for fairness; if closed (all data
-                    // has arrived), we must keep processing until everything is drained,
-                    // as there will be no more signals "kicking" new work iterations
-                    while (closed || batchByteCount < MAX_BATCH_BYTES) {
+        private void process() {
+            if (!ackFuture.isDone()) {
+                try {
+                    long bytesToWrite = queuedBytes.get();
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    long processed = 0;
+                    while (processed < bytesToWrite) {
                         byte[] chunk = bytesQueue.poll();
                         if (chunk == null) {
                             break;
                         }
                         md5.update(chunk);
-                        batchBytes.write(chunk, 0, chunk.length);
-                        batchByteCount += chunk.length;
-                        // Release capacity for each processed chunk
-                        queueSlots.release();
+                        baos.write(chunk);
+                        processed += chunk.length;
                     }
-
-                    if (batchByteCount > 0) {
-                        boolean isLastBatch = closed && bytesQueue.isEmpty();
-                        try (InputStream combined = new ByteArrayInputStream(batchBytes.toByteArray())) {
-                            manager.writeChunk(resourceId, combined, isLastBatch);
-                        }
-                        bytesWritten += batchByteCount;
-                        if (isLastBatch) {
-                            finalSent = true;
-                        }
+                    try (InputStream combined = new ByteArrayInputStream(baos.toByteArray())) {
+                        manager.writeChunk(resourceId, combined, closed);
+                    }
+                    queuedBytes.addAndGet(-processed);
+                    bytesWritten.addAndGet(processed);
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("{} D: Queue size now {}, chunks={}", resourceId, queuedBytes.get(), bytesQueue.size());
                     }
                     if (closed) {
-                        // Finalize once: empty final write if not sent yet (e.g. 0-byte uploads), compute checksum, complete ack
-                        if (!finalSent) {
-                            try (InputStream empty = new ByteArrayInputStream(new byte[0])) {
-                                manager.writeChunk(resourceId, empty, true);
-                            }
-                            finalSent = true;
-                        }
                         String checksum = toHex(md5.digest());
                         StreamingResourceStatus status = manager.getStatus(resourceId);
                         Long lines = status.getNumberOfLines();
                         if (!ackFuture.isDone()) {
-                            // Completing the future will cause the while-loop to exit on its next check
-                            ackFuture.complete(new UploadAcknowledgedMessage(bytesWritten, lines, checksum));
+                            ackFuture.complete(new UploadAcknowledgedMessage(bytesWritten.get(), lines, checksum));
                         }
                     }
-                    // This will keep the outer loop active as long as at least one
-                    // other signal for "hey, there's work" was present (but consume all of them at once)
-                    signalsToConsume = activeWork.addAndGet(-signalsToConsume);
+                } catch (Throwable e) {
+                    ackFuture.completeExceptionally(e);
                 }
-            } catch (Throwable t) {
-                if (!ackFuture.isDone()) {
-                    ackFuture.completeExceptionally(t);
-                }
-                // Abnormal termination — explicitly restore invariant; this is mostly for consistency, as
-                // after the result is completed with an exception, we're not expecting any more work anyway.
-                activeWork.set(0);
             }
         }
 
