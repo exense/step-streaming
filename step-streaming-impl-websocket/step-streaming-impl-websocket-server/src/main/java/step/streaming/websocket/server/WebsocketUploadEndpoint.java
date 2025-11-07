@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.*;
 import step.streaming.server.StreamingResourceManager;
+import step.streaming.util.BatchProcessor;
 import step.streaming.websocket.CloseReasonUtil;
 import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.upload.*;
@@ -91,7 +92,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         if (exception instanceof IOException && exception.getCause() instanceof QuotaExceededException) {
             exception = exception.getCause();
         }
-        logger.warn("Closing Websocket Session with error: {}", exception.getMessage(), exception);
+        logger.warn("{} Closing Websocket Session with error: {}", resourceId, exception.getMessage(), exception);
         if (exception instanceof QuotaExceededException) {
             // this one is handled specially by the client
             closeSession(session, CloseReasonUtil.makeSafeCloseReason(
@@ -150,7 +151,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                     finalAck = new UploadAcknowledgedMessage(ack.size, finalStatus.getNumberOfLines(), ack.checksum);
                 }
                 state = State.FINISHED;
-                logger.info("Upload complete, sending acknowledge message: {}", finalAck);
+                logger.info("{} Upload complete, sending acknowledge message: {}", resourceId, finalAck);
                 session.getAsyncRemote().sendText(finalAck.toString(), result -> {
                     if (!result.isOK()) {
                         logger.warn("{}: failed to send upload acknowledge", resourceId, result.getException());
@@ -236,39 +237,18 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     }
 
     // ---------------------- Internal helpers ----------------------
-    // Code / comments below partly AI-assisted
 
-    /**
-     * UploadPipeline — a cooperative, per-upload drain pipeline.
-     *
-     * <p>This component asynchronously drains incoming byte chunks for a single upload (originating from Jetty)
-     * using an {@link ExecutorService} shared between uploads.
-     *
-     * <ul>
-     *   <li>Uses the shared {@code uploadsPool}; no dedicated thread per upload.</li>
-     *   <li>Implements bounded backpressure via a {@link Semaphore} ({@code QUEUE_SLOTS}).</li>
-     *   <li>Ensures that only one drain task (per upload) runs at a time via a work-in-progress counter.</li>
-     *   <li>Batches chunks up to a fixed byte limit per pass for fairness across uploads.</li>
-     *   <li>Writes data through {@link StreamingResourceManager#writeChunk(String, InputStream, boolean)}.</li>
-     *   <li>Completes the upload with an {@link UploadAcknowledgedMessage} once fully drained.</li>
-     *   <li>Eliminates the lost-signal/deadlock issue of the previous design (SED-4327).</li>
-     * </ul>
-     *
-     * <p>Thread-safe and non-blocking except for producer-side backpressure.
-     */
     private static final class UploadPipeline {
         private final String resourceId;
         private final StreamingResourceManager manager;
-
-        private final ConcurrentLinkedQueue<byte[]> chunksQueue = new ConcurrentLinkedQueue<>();
-        private final AtomicLong queuedBytes = new AtomicLong(0); // only informational
         private final AtomicLong bytesWritten = new AtomicLong(0);
-        private volatile long lastWriteTimestamp = 0;
-
         private volatile boolean closed;
 
         private final MessageDigest md5;
         private CompletableFuture<UploadAcknowledgedMessage> ackFuture;
+        private final BatchProcessor<byte[]> batchProcessor;
+
+        private static final long MAX_QUEUE_SIZE = 256 * 1024;
 
         UploadPipeline(String resourceId, ExecutorService uploadsPool, StreamingResourceManager manager) {
             this.resourceId = resourceId;
@@ -279,9 +259,18 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 // won't happen
                 throw new IllegalStateException("MD5 not available", e);
             }
+            this.batchProcessor = new BatchProcessor<>(this::isMaxQueueSizeReached, 1000, this::processChunks, "ws-upload");
         }
 
-        private static final long maxQueueSize = 256 * 1024;
+        private boolean isMaxQueueSizeReached(List<byte[]> queue) {
+            // loop unrolled because this may be invoked very often, so avoid the overhead of functional streams (queue.stream().mapToInt(b -> b.size()).sum())
+            long queueSize = 0;
+            for (byte[] bytes : queue) {
+                queueSize += bytes.length;
+            }
+            return queueSize >= MAX_QUEUE_SIZE;
+        }
+
 
         /**
          * Start; returns future that completes once all bytes are written and ack is ready.
@@ -291,31 +280,32 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             return ackFuture;
         }
 
-        synchronized void put(byte[] chunk) {
-            chunksQueue.offer(chunk);
-            long now = System.currentTimeMillis();
-            long newQueueSize = queuedBytes.addAndGet(chunk.length);
-            if (newQueueSize >= maxQueueSize || now - lastWriteTimestamp >= 1000) {
-                lastWriteTimestamp = now;
-                processQueue();
-            } else {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("{} Q: Queue size now {}, chunks={}", resourceId, queuedBytes.get(), chunksQueue.size());
+        void put(byte[] chunk) {
+            int queued = batchProcessor.add(chunk);
+            if (queued > 0 && logger.isDebugEnabled()) {
+                logger.debug("{} Q: Queue size now {}", resourceId, queued);
+            }
+        }
+
+        void closeInput() {
+            if (!closed) {
+                closed = true;
+                // this also flushes before closing
+                batchProcessor.close();
+                // Rare but possible: if the batch processor had nothing to process,
+                // we have to manually trigger a last round of processing
+                if (!ackFuture.isDone()) {
+                    processChunks(List.of());
                 }
             }
         }
 
-        synchronized void closeInput() {
-            closed = true;
-            processQueue();
-        }
-
-        private void processQueue() {
+        private void processChunks(List<byte[]> chunks) {
             if (!ackFuture.isDone()) {
                 try {
                     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
                     long processed = 0;
-                    for (byte[] chunk = chunksQueue.poll(); chunk != null; chunk = chunksQueue.poll()) {
+                    for (byte[] chunk: chunks) {
                         md5.update(chunk);
                         bytes.write(chunk);
                         processed += chunk.length;
@@ -324,11 +314,10 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                         try (InputStream combined = new ByteArrayInputStream(bytes.toByteArray())) {
                             manager.writeChunk(resourceId, combined, closed);
                         }
-                        queuedBytes.addAndGet(-processed);
                         bytesWritten.addAndGet(processed);
                         if (logger.isDebugEnabled()) {
                             // unless something is horribly wrong, queue size should be back to 0
-                            logger.debug("{} D: Queue size now {}, chunks={}", resourceId, queuedBytes.get(), chunksQueue.size());
+                            logger.debug("{} D: Queue size now {}", resourceId, batchProcessor.getCurrentBatchSize());
                         }
                         if (closed) {
                             String checksum = toHex(md5.digest());
