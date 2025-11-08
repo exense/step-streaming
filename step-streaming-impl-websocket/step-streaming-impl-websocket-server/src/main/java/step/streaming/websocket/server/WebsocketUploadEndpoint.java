@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     public static final String DEFAULT_ENDPOINT_URL = "/ws/streaming/upload";
@@ -259,18 +260,16 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 // won't happen
                 throw new IllegalStateException("MD5 not available", e);
             }
-            this.batchProcessor = new BatchProcessor<>(this::isMaxQueueSizeReached, 1000, this::processChunks, "ws-upload");
-        }
 
-        private boolean isMaxQueueSizeReached(List<byte[]> queue) {
-            // loop unrolled because this may be invoked very often, so avoid the overhead of functional streams (queue.stream().mapToInt(b -> b.size()).sum())
-            long queueSize = 0;
-            for (byte[] bytes : queue) {
-                queueSize += bytes.length;
-            }
-            return queueSize >= MAX_QUEUE_SIZE;
+            BatchProcessor.CounterBasedFlushDecider<byte[]> predicate = new BatchProcessor.CounterBasedFlushDecider<>() {
+                @Override
+                public boolean shouldFlush(LongAdder counter, byte[] newItem) {
+                    counter.add(newItem.length);
+                    return counter.longValue() >= MAX_QUEUE_SIZE;
+                }
+            };
+            this.batchProcessor = new BatchProcessor<>(predicate, 1000, this::processChunks, "ws-upload");
         }
-
 
         /**
          * Start; returns future that completes once all bytes are written and ack is ready.
