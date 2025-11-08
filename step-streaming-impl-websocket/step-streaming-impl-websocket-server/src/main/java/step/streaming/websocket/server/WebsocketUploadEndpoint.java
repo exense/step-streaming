@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
 
 public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     public static final String DEFAULT_ENDPOINT_URL = "/ws/streaming/upload";
@@ -261,14 +260,8 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 throw new IllegalStateException("MD5 not available", e);
             }
 
-            BatchProcessor.CounterBasedFlushDecider<byte[]> predicate = new BatchProcessor.CounterBasedFlushDecider<>() {
-                @Override
-                public boolean shouldFlush(LongAdder counter, byte[] newItem) {
-                    counter.add(newItem.length);
-                    return counter.longValue() >= MAX_QUEUE_SIZE;
-                }
-            };
-            this.batchProcessor = new BatchProcessor<>(predicate, 1000, this::processChunks, "ws-upload");
+            BatchProcessor.CountingFlushDecider<byte[]> decider = new BatchProcessor.CountingFlushDecider<>(ba -> (long) ba.length, MAX_QUEUE_SIZE);
+            this.batchProcessor = new BatchProcessor<>(decider, 1000, this::processChunks, "ws-upload");
         }
 
         /**
