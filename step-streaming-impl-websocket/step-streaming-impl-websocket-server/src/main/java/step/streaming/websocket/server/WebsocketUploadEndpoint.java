@@ -92,7 +92,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         if (exception instanceof IOException && exception.getCause() instanceof QuotaExceededException) {
             exception = exception.getCause();
         }
-        logger.warn("{} Closing Websocket Session with error: {}", resourceId, exception.getMessage(), exception);
+        logger.warn("Closing Websocket Session for resource {} with error: {}", resourceId, exception.getMessage(), exception);
         if (exception instanceof QuotaExceededException) {
             // this one is handled specially by the client
             closeSession(session, CloseReasonUtil.makeSafeCloseReason(
@@ -293,6 +293,8 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         }
 
         private void processChunks(List<byte[]> chunks) {
+            // If the result is already sent, but bytes are still asynchronously coming in,
+            // ignore them. This can happen when an exception was thrown (e.g. quota exceeded).
             if (!ackFuture.isDone()) {
                 try {
                     ByteArrayOutputStream bytes = new ByteArrayOutputStream();

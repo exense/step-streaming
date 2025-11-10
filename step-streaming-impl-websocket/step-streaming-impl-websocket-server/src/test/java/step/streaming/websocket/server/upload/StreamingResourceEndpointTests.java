@@ -485,4 +485,18 @@ public class StreamingResourceEndpointTests {
             Files.deleteIfExists(dataFile.toPath());
         }
     }
+
+    @Test
+    public void testZeroByteUpload() throws Exception {
+        File dataFile = Files.createTempFile("step-streaming-test-", ".txt").toFile();
+        StreamingUploads uploads = new StreamingUploads(new WebsocketUploadProvider(wsContainer, clientsExecutor, uploadUri));
+        try {
+            StreamingUpload upload = uploads.startTextFileUpload(dataFile);
+            Thread.sleep(500);
+            var result = upload.complete();
+            Assert.assertEquals(new StreamingResourceStatus(StreamingResourceTransferStatus.COMPLETED, 0, 0L), result);
+        } finally {
+            Files.deleteIfExists(dataFile.toPath());
+        }
+    }
 }
