@@ -80,7 +80,6 @@ public class StreamingResourceEndpointTests {
     private TestingWebsocketServer server;
     private URI uploadUri;
     private ExecutorService clientsExecutor;
-    private ExecutorService serverExecutor;
 
     private static final String FAUST_ISO8859_CHECKSUM = "317c7a8df8c817c80bf079cfcbbc6686";
     private static final String FAUST_UTF8_CHECKSUM = "540441d13a31641d7775d91c46c94511";
@@ -88,7 +87,6 @@ public class StreamingResourceEndpointTests {
     @Before
     public void setUp() throws Exception {
         clientsExecutor = ThreadPools.createPoolExecutor("clients-executor");
-        serverExecutor = ThreadPools.createPoolExecutor("websocket-upload-processor");
         wsContainer = ContainerProvider.getWebSocketContainer();
         sessionsHandler = new DefaultWebsocketServerEndpointSessionsHandler();
         storageBackend = new TestingStorageBackend(1000L, false);
@@ -96,8 +94,7 @@ public class StreamingResourceEndpointTests {
         referenceProducer = new URITemplateBasedReferenceProducer(null, WebsocketDownloadEndpoint.DEFAULT_ENDPOINT_URL, WebsocketDownloadEndpoint.DEFAULT_PARAMETER_NAME);
         manager = new TestingResourceManager(catalogBackend, storageBackend,
                 referenceProducer,
-                new StreamingResourceUploadContexts(),
-                serverExecutor
+                new StreamingResourceUploadContexts()
         );
         server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
         referenceProducer.setBaseUri(server.getURI());
@@ -109,7 +106,6 @@ public class StreamingResourceEndpointTests {
         Thread.sleep(100);
         sessionsHandler.shutdown();
         clientsExecutor.shutdownNow();
-        serverExecutor.shutdownNow();
         ((LifeCycle) wsContainer).stop();
         server.stop();
         storageBackend.cleanup();

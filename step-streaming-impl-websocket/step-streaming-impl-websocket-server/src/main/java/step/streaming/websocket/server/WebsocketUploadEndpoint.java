@@ -13,12 +13,15 @@ import step.streaming.websocket.CloseReasonUtil;
 import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.upload.*;
 
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
@@ -47,13 +50,11 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
 
     // Per-session pipeline (created on first data frame)
     private UploadPipeline uploadPipeline;
-    private final ExecutorService uploadsPool;
 
     public WebsocketUploadEndpoint(StreamingResourceManager manager, WebsocketServerEndpointSessionsHandler sessionsHandler) {
         UploadProtocolMessage.initialize();
         this.manager = manager;
         this.sessionsHandler = sessionsHandler;
-        this.uploadsPool = manager.getUploadsThreadPool();
     }
 
     @Override
@@ -117,7 +118,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 StreamingResourceReference reference = manager.getReferenceFor(resourceId);
                 logger.info("{}: Starting streaming upload, metadata={}", resourceId, metadata);
 
-                uploadPipeline = new UploadPipeline(resourceId, uploadsPool, manager);
+                uploadPipeline = new UploadPipeline(resourceId, manager);
                 uploadAcknowledgedMessage = uploadPipeline.startConsumer();
 
                 state = State.UPLOADING;
@@ -250,7 +251,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
 
         private static final long MAX_QUEUE_SIZE = 256 * 1024;
 
-        UploadPipeline(String resourceId, ExecutorService uploadsPool, StreamingResourceManager manager) {
+        UploadPipeline(String resourceId, StreamingResourceManager manager) {
             this.resourceId = resourceId;
             this.manager = manager;
             try {

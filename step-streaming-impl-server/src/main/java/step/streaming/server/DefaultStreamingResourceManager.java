@@ -3,24 +3,21 @@ package step.streaming.server;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.*;
-import step.streaming.server.data.LineSlicingIterator;
 import step.streaming.util.ExceptionsUtil;
 import step.streaming.util.ThrowingConsumer;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 public class DefaultStreamingResourceManager implements StreamingResourceManager {
 
@@ -30,7 +27,6 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     protected final StreamingResourcesStorageBackend storage;
     protected final StreamingResourceUploadContexts uploadContexts;
     protected final Function<String, StreamingResourceReference> referenceProducerFunction;
-    protected final ExecutorService uploadsThreadPool;
 
     // Listeners interested in a single resource (e.g. download clients). Listeners interested in an entire context will use the respective methods in the uploadContexts instead.
     protected final Map<String, CopyOnWriteArrayList<Consumer<StreamingResourceStatus>>> statusListeners = new ConcurrentHashMap<>();
@@ -38,20 +34,13 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     public DefaultStreamingResourceManager(StreamingResourcesCatalogBackend catalog,
                                            StreamingResourcesStorageBackend storage,
                                            Function<String, StreamingResourceReference> referenceProducerFunction,
-                                           StreamingResourceUploadContexts uploadContexts,
-                                           ExecutorService uploadsThreadPool
+                                           StreamingResourceUploadContexts uploadContexts
 
     ) {
         this.catalog = Objects.requireNonNull(catalog);
         this.storage = Objects.requireNonNull(storage);
         this.referenceProducerFunction = Objects.requireNonNull(referenceProducerFunction);
         this.uploadContexts = uploadContexts;
-        this.uploadsThreadPool = uploadsThreadPool;
-    }
-
-    @Override
-    public ExecutorService getUploadsThreadPool() {
-        return uploadsThreadPool;
     }
 
     @Override
