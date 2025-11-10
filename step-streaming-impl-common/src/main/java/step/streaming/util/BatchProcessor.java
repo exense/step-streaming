@@ -28,6 +28,7 @@ import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -41,7 +42,7 @@ public class BatchProcessor<T> implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(BatchProcessor.class);
 
-    private final Function<List<T>, Boolean> shouldFlushPredicate;
+    private final FlushDecider<T> flushDecider;
     private final long flushIntervalMs;
     private final Consumer<List<T>> batchProcessor;
     private final String processorName;
@@ -60,19 +61,19 @@ public class BatchProcessor<T> implements AutoCloseable {
      * @param processorName   a name for this processor (used for logging and thread naming)
      */
     public BatchProcessor(int batchSize, long flushIntervalMs, Consumer<List<T>> batchProcessor, String processorName) {
-        this(queued -> queued.size() >= batchSize, flushIntervalMs, batchProcessor, processorName);
+        this(new CountingFlushDecider<T>(item -> 1L, batchSize), flushIntervalMs, batchProcessor, processorName);
     }
 
     /**
      * Creates a new BatchProcessor with the specified configuration.
      *
-     * @param shouldFlashPredicate a function determining whether to flush immediately given the currently batched items.
-     * @param flushIntervalMs      the maximum time in milliseconds to wait before processing
-     * @param batchProcessor       the function to process batches of items
-     * @param processorName        a name for this processor (used for logging and thread naming)
+     * @param flushDecider    the class that decides whether the queue should be flushed immediately or not.
+     * @param flushIntervalMs the maximum time in milliseconds to wait before processing
+     * @param batchProcessor  the function to process batches of items
+     * @param processorName   a name for this processor (used for logging and thread naming)
      */
-    public BatchProcessor(Function<List<T>, Boolean> shouldFlashPredicate, long flushIntervalMs, Consumer<List<T>> batchProcessor, String processorName) {
-        this.shouldFlushPredicate = Objects.requireNonNull(shouldFlashPredicate);
+    public BatchProcessor(FlushDecider<T> flushDecider, long flushIntervalMs, Consumer<List<T>> batchProcessor, String processorName) {
+        this.flushDecider = Objects.requireNonNull(flushDecider);
         if (flushIntervalMs <= 0) throw new IllegalArgumentException("flushIntervalMs must be positive");
         this.flushIntervalMs = flushIntervalMs;
         this.batchProcessor = Objects.requireNonNull(batchProcessor);
@@ -89,6 +90,57 @@ public class BatchProcessor<T> implements AutoCloseable {
     }
 
     /**
+     * A class that decides whether a batch should be flushed when a new item arrives.
+     * The methods of this class will always be called while a lock on the batch is held,
+     * so implementations need not be thread-safe.
+     *
+     * @param <T> Batch item type
+     */
+    public static abstract class FlushDecider<T> {
+        public abstract boolean shouldFlush(T newItem);
+
+        public abstract void onFlush();
+    }
+
+    /**
+     * FlushDecider implementation that maintains a counter and signals to flush batches when
+     * the counter reaches (or exceeds) a limit. Both the limit and the function that determines
+     * by how much to increase the counter for a given item are configured using the constructor.
+     * <p>
+     * The counter is reset to 0 on each flush.
+     *
+     * @param <T> Batch item type
+     */
+    public static class CountingFlushDecider<T> extends FlushDecider<T> {
+        private final LongAdder counter = new LongAdder();
+
+        private final Function<T, Long> incrementFunction;
+        private final long flushLimit;
+
+        /**
+         * Creates a new CountingFlushDecider
+         *
+         * @param incrementForItem function returning by how much to increment the counter for a given item.
+         * @param flushLimit       counter limit at which the batch will be flushed.
+         */
+        public CountingFlushDecider(Function<T, Long> incrementForItem, long flushLimit) {
+            this.flushLimit = flushLimit;
+            this.incrementFunction = Objects.requireNonNull(incrementForItem);
+        }
+
+        @Override
+        public boolean shouldFlush(T newItem) {
+            counter.add(incrementFunction.apply(newItem));
+            return counter.longValue() >= flushLimit;
+        }
+
+        @Override
+        public void onFlush() {
+            counter.reset();
+        }
+    }
+
+    /**
      * Adds an item to the batch. If the batch reaches the configured size,
      * it will be processed immediately.
      *
@@ -98,7 +150,7 @@ public class BatchProcessor<T> implements AutoCloseable {
     public int add(T item) {
         synchronized (batch) {
             batch.add(item);
-            if (shouldFlushPredicate.apply(batch)) {
+            if (flushDecider.shouldFlush(item)) {
                 flushBatch();
                 return 0;
             } else {
@@ -141,6 +193,7 @@ public class BatchProcessor<T> implements AutoCloseable {
             }
             List<T> toProcess = new ArrayList<>(batch);
             batch.clear();
+            flushDecider.onFlush();
             lastFlushTime = System.currentTimeMillis();
 
             try {

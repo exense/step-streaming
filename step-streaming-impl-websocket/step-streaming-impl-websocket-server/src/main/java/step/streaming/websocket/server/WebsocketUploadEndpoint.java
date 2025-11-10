@@ -259,18 +259,10 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 // won't happen
                 throw new IllegalStateException("MD5 not available", e);
             }
-            this.batchProcessor = new BatchProcessor<>(this::isMaxQueueSizeReached, 1000, this::processChunks, "ws-upload");
-        }
 
-        private boolean isMaxQueueSizeReached(List<byte[]> queue) {
-            // loop unrolled because this may be invoked very often, so avoid the overhead of functional streams (queue.stream().mapToInt(b -> b.size()).sum())
-            long queueSize = 0;
-            for (byte[] bytes : queue) {
-                queueSize += bytes.length;
-            }
-            return queueSize >= MAX_QUEUE_SIZE;
+            BatchProcessor.CountingFlushDecider<byte[]> decider = new BatchProcessor.CountingFlushDecider<>(ba -> (long) ba.length, MAX_QUEUE_SIZE);
+            this.batchProcessor = new BatchProcessor<>(decider, 1000, this::processChunks, "ws-upload");
         }
-
 
         /**
          * Start; returns future that completes once all bytes are written and ack is ready.
