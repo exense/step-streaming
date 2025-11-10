@@ -8,20 +8,21 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.*;
 import step.streaming.server.StreamingResourceManager;
+import step.streaming.util.BatchProcessor;
 import step.streaming.websocket.CloseReasonUtil;
 import step.streaming.websocket.HalfCloseCompatibleEndpoint;
 import step.streaming.websocket.protocol.upload.*;
 
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     public static final String DEFAULT_ENDPOINT_URL = "/ws/streaming/upload";
@@ -49,13 +50,11 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
 
     // Per-session pipeline (created on first data frame)
     private UploadPipeline uploadPipeline;
-    private final ExecutorService uploadsPool;
 
     public WebsocketUploadEndpoint(StreamingResourceManager manager, WebsocketServerEndpointSessionsHandler sessionsHandler) {
         UploadProtocolMessage.initialize();
         this.manager = manager;
         this.sessionsHandler = sessionsHandler;
-        this.uploadsPool = manager.getUploadsThreadPool();
     }
 
     @Override
@@ -94,7 +93,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         if (exception instanceof IOException && exception.getCause() instanceof QuotaExceededException) {
             exception = exception.getCause();
         }
-        logger.warn("Closing Websocket Session with error: {}", exception.getMessage(), exception);
+        logger.warn("Closing Websocket Session for resource {} with error: {}", resourceId, exception.getMessage(), exception);
         if (exception instanceof QuotaExceededException) {
             // this one is handled specially by the client
             closeSession(session, CloseReasonUtil.makeSafeCloseReason(
@@ -119,8 +118,8 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 StreamingResourceReference reference = manager.getReferenceFor(resourceId);
                 logger.info("{}: Starting streaming upload, metadata={}", resourceId, metadata);
 
-                uploadPipeline = new UploadPipeline(resourceId, uploadsPool);
-                uploadAcknowledgedMessage = uploadPipeline.startConsumer(manager);
+                uploadPipeline = new UploadPipeline(resourceId, manager);
+                uploadAcknowledgedMessage = uploadPipeline.startConsumer();
 
                 state = State.UPLOADING;
 
@@ -153,7 +152,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                     finalAck = new UploadAcknowledgedMessage(ack.size, finalStatus.getNumberOfLines(), ack.checksum);
                 }
                 state = State.FINISHED;
-                logger.info("Upload complete, sending acknowledge message: {}", finalAck);
+                logger.info("{} Upload complete, sending acknowledge message: {}", resourceId, finalAck);
                 session.getAsyncRemote().sendText(finalAck.toString(), result -> {
                     if (!result.isOK()) {
                         logger.warn("{}: failed to send upload acknowledge", resourceId, result.getException());
@@ -238,130 +237,94 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         }
     }
 
-    // ---------------------- Internal helpers (no external API changes) ----------------------
-    // Code below is mostly AI-generated (but manually reviewed and slightly adapted)
+    // ---------------------- Internal helpers ----------------------
 
-    /**
-     * Cooperative, per-upload serial runner.
-     * - Uses the shared uploadsPool (no dedicated thread per upload).
-     * - Processes a small batch per hop, then yields.
-     * - Calls manager.writeChunk(resourceId, in, isFinal) with isFinal=true exactly once.
-     * - Handles 0-byte uploads via a final empty write.
-     */
     private static final class UploadPipeline {
-        private static final int PER_UPLOAD_QUEUE_CAPACITY = 128;
-        private static final int MAX_BATCH_CHUNKS = 32; // fairness: how many chunks per hop
-        private static final int MAX_BATCH_SIZE = 128 * 1024; // maximum bytes processed in one batch
-
         private final String resourceId;
-        private final ExecutorService uploadsPool;
-        private final BlockingQueue<byte[]> queue = new ArrayBlockingQueue<>(PER_UPLOAD_QUEUE_CAPACITY);
-        private final AtomicBoolean running = new AtomicBoolean(false);
-
+        private final StreamingResourceManager manager;
+        private final AtomicLong bytesWritten = new AtomicLong(0);
         private volatile boolean closed;
 
-        // set in startConsumer(...)
-        private StreamingResourceManager manager;
-        private MessageDigest md;
-        private long bytesWritten;
-        private boolean finalSent;
+        private final MessageDigest md5;
         private CompletableFuture<UploadAcknowledgedMessage> ackFuture;
+        private final BatchProcessor<byte[]> batchProcessor;
 
-        UploadPipeline(String resourceId, ExecutorService uploadsPool) {
+        private static final long MAX_QUEUE_SIZE = 256 * 1024;
+
+        UploadPipeline(String resourceId, StreamingResourceManager manager) {
             this.resourceId = resourceId;
-            this.uploadsPool = uploadsPool;
-        }
-
-        /** Enqueue a chunk; bounded queue provides backpressure to the Jetty thread. */
-        void put(byte[] chunk) throws InterruptedException {
-            // try non-blocking first; if full, block this one connection briefly
-            if (!queue.offer(chunk)) {
-                queue.put(chunk);
-            }
-            schedule();
-        }
-
-        /** Signal that no more input will arrive. */
-        void closeInput() {
-            closed = true;
-            schedule();
-        }
-
-        /** Start draining; returns a future that completes once all bytes are written and ack is ready. */
-        CompletableFuture<UploadAcknowledgedMessage> startConsumer(StreamingResourceManager manager) {
             this.manager = manager;
             try {
-                this.md = java.security.MessageDigest.getInstance("MD5");
+                this.md5 = java.security.MessageDigest.getInstance("MD5");
             } catch (java.security.NoSuchAlgorithmException e) {
+                // won't happen
                 throw new IllegalStateException("MD5 not available", e);
             }
+
+            BatchProcessor.CountingFlushDecider<byte[]> decider = new BatchProcessor.CountingFlushDecider<>(ba -> (long) ba.length, MAX_QUEUE_SIZE);
+            this.batchProcessor = new BatchProcessor<>(decider, 1000, this::processChunks, "ws-upload");
+        }
+
+        /**
+         * Start; returns future that completes once all bytes are written and ack is ready.
+         */
+        CompletableFuture<UploadAcknowledgedMessage> startConsumer() {
             this.ackFuture = new CompletableFuture<>();
-            schedule();
             return ackFuture;
         }
 
-        /** Ensure exactly one runner is active; if not, enqueue one hop. */
-        private void schedule() {
-            if (running.compareAndSet(false, true)) {
-                uploadsPool.execute(this::runOnce);
+        void put(byte[] chunk) {
+            int queued = batchProcessor.add(chunk);
+            if (queued > 0 && logger.isDebugEnabled()) {
+                logger.debug("{} Q: Queue size now {}", resourceId, queued);
             }
         }
 
-        /** Process a small batch, then either finalize, reschedule, or yield idle. */
-        private void runOnce() {
-            if (ackFuture.isCompletedExceptionally()) {
-                logger.debug("Upload {} already failed, skipping work", resourceId);
-                return;
+        void closeInput() {
+            if (!closed) {
+                closed = true;
+                // this also flushes before closing
+                batchProcessor.close();
+                // Rare but possible: if the batch processor had nothing to process,
+                // we have to manually trigger a last round of processing
+                if (!ackFuture.isDone()) {
+                    processChunks(List.of());
+                }
             }
-            boolean moreWork = false;
-            try {
-                int processed = 0;
-                int totalBytes = 0;
-                ByteArrayOutputStream batch = new ByteArrayOutputStream();
+        }
 
-                byte[] chunk;
-                while (processed < MAX_BATCH_CHUNKS && totalBytes <= MAX_BATCH_SIZE && (chunk = queue.poll()) != null) {
-                    md.update(chunk);
-                    batch.write(chunk);
-                    totalBytes += chunk.length;
-                    processed++;
-                }
-
-                if (processed > 0) {
-                    // After popping this batch, if input is closed and nothing remains, this batch is the final write.
-                    boolean willBeLastBatch = closed && queue.isEmpty();
-
-                    try (InputStream combined = new ByteArrayInputStream(batch.toByteArray())) {
-                        manager.writeChunk(resourceId, combined, willBeLastBatch);
+        private void processChunks(List<byte[]> chunks) {
+            // If the result is already sent, but bytes are still asynchronously coming in,
+            // ignore them. This can happen when an exception was thrown (e.g. quota exceeded).
+            if (!ackFuture.isDone()) {
+                try {
+                    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                    long processed = 0;
+                    for (byte[] chunk: chunks) {
+                        md5.update(chunk);
+                        bytes.write(chunk);
+                        processed += chunk.length;
                     }
-
-                    bytesWritten += totalBytes;
-                    if (willBeLastBatch) finalSent = true;
-                }
-
-                if (!queue.isEmpty()) {
-                    // more chunks ready right now — keep going soon
-                    moreWork = true;
-                } else if (closed) {
-                    // input closed and queue empty => finalize if needed, then complete ack
-                    if (!finalSent) {
-                        try (InputStream empty = new ByteArrayInputStream(new byte[0])) {
-                            manager.writeChunk(resourceId, empty, true);
+                    if (processed > 0 || closed) {
+                        try (InputStream combined = new ByteArrayInputStream(bytes.toByteArray())) {
+                            manager.writeChunk(resourceId, combined, closed);
                         }
-                        finalSent = true;
+                        bytesWritten.addAndGet(processed);
+                        if (logger.isDebugEnabled()) {
+                            // unless something is horribly wrong, queue size should be back to 0
+                            logger.debug("{} D: Queue size now {}", resourceId, batchProcessor.getCurrentBatchSize());
+                        }
+                        if (closed) {
+                            String checksum = toHex(md5.digest());
+                            StreamingResourceStatus status = manager.getStatus(resourceId);
+                            Long lines = status.getNumberOfLines();
+                            if (!ackFuture.isDone()) {
+                                ackFuture.complete(new UploadAcknowledgedMessage(bytesWritten.get(), lines, checksum));
+                            }
+                        }
                     }
-                    String checksum = toHex(md.digest());
-                    StreamingResourceStatus status = manager.getStatus(resourceId);
-                    Long lines = status.getNumberOfLines();
-                    ackFuture.complete(new UploadAcknowledgedMessage(bytesWritten, lines, checksum));
-                }
-            } catch (Throwable t) {
-                ackFuture.completeExceptionally(t);
-            } finally {
-                // yield: drop the running flag, and if work showed up in the meantime, re-arm
-                running.set(false);
-                if ((moreWork || !queue.isEmpty()) && running.compareAndSet(false, true)) {
-                    uploadsPool.execute(this::runOnce);
+                } catch (Throwable e) {
+                    ackFuture.completeExceptionally(e);
                 }
             }
         }
@@ -375,4 +338,5 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             return sb.toString();
         }
     }
+
 }
