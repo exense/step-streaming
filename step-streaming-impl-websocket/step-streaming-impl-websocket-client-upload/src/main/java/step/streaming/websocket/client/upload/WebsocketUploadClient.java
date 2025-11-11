@@ -1,6 +1,8 @@
 package step.streaming.websocket.client.upload;
 
 import jakarta.websocket.*;
+import org.eclipse.jetty.client.HttpClient;
+import org.eclipse.jetty.websocket.jakarta.client.internal.JakartaWebSocketClientContainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.QuotaExceededException;
@@ -15,6 +17,7 @@ import step.streaming.websocket.protocol.upload.*;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.net.URI;
 import java.nio.channels.ClosedChannelException;
 import java.util.Objects;
@@ -74,6 +77,19 @@ public class WebsocketUploadClient {
     private Session connect(URI websocketUri, WebSocketContainer container) throws IOException {
         try {
             endpoint = new Remote();
+            // Default timeout of 5 seconds may not be enough when upload endpoint is under load (many concurrent uploads starting at the same time)
+            if (container instanceof JakartaWebSocketClientContainer) {
+                try {
+                    // Holy crap... there is NO official way to change the timeout, and everything in the implementation is hidden away.
+                    Method m = container.getClass().getDeclaredMethod("getHttpClient");
+                    m.setAccessible(true);
+                    HttpClient client = (HttpClient) m.invoke(container);
+                    client.setConnectTimeout(timeoutSeconds * 1000);
+                } catch (Throwable t) {
+                    logger.error("Error while configuring Websocket client: " + t.getMessage(), t);
+                    throw new RuntimeException(t);
+                }
+            }
             return container.connectToServer(endpoint, ClientEndpointConfig.Builder.create().build(), websocketUri);
         } catch (DeploymentException e) {
             throw new IOException(e);
