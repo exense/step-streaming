@@ -87,7 +87,8 @@ public class StreamingResourceEndpointTests {
     @Before
     public void setUp() throws Exception {
         clientsExecutor = ThreadPools.createPoolExecutor("clients-executor");
-        wsContainer = ContainerProvider.getWebSocketContainer();
+        // instantiate it the same way that Step does.
+        wsContainer = (WebSocketContainer) WebsocketUploadProvider.instantiateWebSocketContainer();
         sessionsHandler = new DefaultWebsocketServerEndpointSessionsHandler();
         storageBackend = new TestingStorageBackend(1000L, false);
         catalogBackend = new InMemoryCatalogBackend();

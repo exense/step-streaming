@@ -2,6 +2,7 @@ package step.streaming.websocket.client.upload;
 
 import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.WebSocketContainer;
+import org.eclipse.jetty.util.component.LifeCycle;
 import step.streaming.client.upload.StreamingUploadProvider;
 import step.streaming.client.upload.impl.AbstractStreamingUploadProvider;
 import step.streaming.common.QuotaExceededException;
@@ -45,7 +46,11 @@ public class WebsocketUploadProvider extends AbstractStreamingUploadProvider {
 
     // Helper method for abovementioned use case: instantiate a new container and return as Object.
     public static Object instantiateWebSocketContainer() {
-        return ContainerProvider.getWebSocketContainer();
+        WebSocketContainer container = ContainerProvider.getWebSocketContainer();
+        // about 1 in 10000 times and under concurrency, we got an exception that the container isn't started yet when trying
+        // to use it -- probably because of lazy initialization and concurrency. Try to fix it by pre-starting
+        LifeCycle.start(container);
+        return container;
     }
 
     @Override
