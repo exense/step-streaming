@@ -179,8 +179,10 @@ public class WebsocketUploadClient {
             outputStream.close();
             String clientChecksum = outputStream.getChecksum();
             logger.debug("{} Data sent: {} bytes, checksum={}", this, bytesSent, clientChecksum);
-            sendText(new FinishUploadMessage(clientChecksum).toString());
+            // set the new state before sending message as replies as sometimes extremely fast, (previously) occasionally resulting in
+            // Unexpected message type: UploadAcknowledgedMessage in state UPLOADING
             state = State.EXPECTING_ACKNOWLEDGE;
+            sendText(new FinishUploadMessage(clientChecksum).toString());
             UploadAcknowledgedMessage acknowledgedMessage = uploadAcknowledgedFuture.get(timeoutSeconds, TimeUnit.SECONDS);
             String serverChecksum = acknowledgedMessage.checksum;
             if (!clientChecksum.equals(serverChecksum)) {
