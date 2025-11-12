@@ -124,7 +124,11 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 state = State.UPLOADING;
 
                 ReadyForUploadMessage reply = new ReadyForUploadMessage(reference);
-                session.getAsyncRemote().sendText(reply.toString());
+                session.getAsyncRemote().sendText(reply.toString(), result -> {
+                    if (!result.isOK()) {
+                        logger.error("{}: failed to send ready for upload message", resourceId, result.getException());
+                    }
+                });
             } catch (IOException | QuotaExceededException e) {
                 closeSession(e);
             }
@@ -155,7 +159,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 logger.info("{} Upload complete, sending acknowledge message: {}", resourceId, finalAck);
                 session.getAsyncRemote().sendText(finalAck.toString(), result -> {
                     if (!result.isOK()) {
-                        logger.warn("{}: failed to send upload acknowledge", resourceId, result.getException());
+                        logger.error("{}: failed to send upload acknowledge", resourceId, result.getException());
                     }
                 });
             });
