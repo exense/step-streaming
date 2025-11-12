@@ -3,6 +3,10 @@ package step.streaming.websocket.client.upload;
 import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.WebSocketContainer;
 import org.eclipse.jetty.util.component.LifeCycle;
+import org.eclipse.jetty.websocket.core.client.WebSocketCoreClient;
+import org.eclipse.jetty.websocket.jakarta.client.internal.JakartaWebSocketClientContainer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import step.streaming.client.upload.StreamingUploadProvider;
 import step.streaming.client.upload.impl.AbstractStreamingUploadProvider;
 import step.streaming.common.QuotaExceededException;
@@ -11,6 +15,7 @@ import step.streaming.data.EndOfInputSignal;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.net.URI;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
@@ -24,6 +29,7 @@ import java.util.concurrent.ExecutorService;
 public class WebsocketUploadProvider extends AbstractStreamingUploadProvider {
     protected final URI endpointUri;
     private final WebSocketContainer container;
+    private static final Logger logger = LoggerFactory.getLogger(WebsocketUploadProvider.class);
 
     /**
      * Creates a new {@code WebsocketUploadProvider} with a custom pool size for asynchronous uploads.
@@ -47,9 +53,7 @@ public class WebsocketUploadProvider extends AbstractStreamingUploadProvider {
     // Helper method for abovementioned use case: instantiate a new container and return as Object.
     public static Object instantiateWebSocketContainer() {
         WebSocketContainer container = ContainerProvider.getWebSocketContainer();
-        // about 1 in 10000 times and under concurrency, we got an exception that the container isn't started yet when trying
-        // to use it -- probably because of lazy initialization and concurrency. Try to fix it by pre-starting
-        LifeCycle.start(container);
+        initializeContainer(container);
         return container;
     }
 
@@ -59,5 +63,30 @@ public class WebsocketUploadProvider extends AbstractStreamingUploadProvider {
         WebsocketUploadClient client = new WebsocketUploadClient(container, endpointUri, upload);
         executorService.submit(() -> client.performUpload(sourceInputStream));
         return upload;
+    }
+
+    private static void initializeContainer(WebSocketContainer container) {
+        // we need to pre-start the container components so they're ready to use, otherwise we can get weird exceptions
+        // like "java.lang.IllegalStateException: WebSocketCoreClient is not started" when the components try
+        // lazy initialization concurrently from multiple threads.
+        if (container instanceof JakartaWebSocketClientContainer) {
+            try {
+                //  I *hate* the way that this stuff is implemented. There are no meaningful methods in the interfaces,
+                //  and even the implementations hide the important stuff away by making the methods protected.
+                JakartaWebSocketClientContainer clientContainer = (JakartaWebSocketClientContainer) container;
+                clientContainer.start();
+                Method getWebSocketCoreClient = clientContainer.getClass().getDeclaredMethod("getWebSocketCoreClient");
+                getWebSocketCoreClient.setAccessible(true);
+                WebSocketCoreClient coreClient = (WebSocketCoreClient) getWebSocketCoreClient.invoke(clientContainer);
+                coreClient.start();
+                int waits = 10;
+                while (!coreClient.isStarted() && waits-- > 0) {
+                    logger.debug("Waiting for Websocket core client to start (iterations left: {})", waits);
+                    Thread.sleep(100);
+                }
+            } catch (Exception e) {
+                logger.error("Error initializing Websocket Container", e);
+            }
+        }
     }
 }
