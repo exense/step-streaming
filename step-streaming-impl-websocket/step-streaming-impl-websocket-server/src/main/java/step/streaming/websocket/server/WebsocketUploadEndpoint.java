@@ -93,13 +93,13 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         if (exception instanceof IOException && exception.getCause() instanceof QuotaExceededException) {
             exception = exception.getCause();
         }
-        logger.warn("Closing Websocket Session for resource {} with error: {}", resourceId, exception.getMessage(), exception);
         if (exception instanceof QuotaExceededException) {
-            // this one is handled specially by the client
+            // this one is handled specially by the client, and also logged again with a shorter warning on the server
             closeSession(session, CloseReasonUtil.makeSafeCloseReason(
                     CloseReason.CloseCodes.VIOLATED_POLICY,
                     "QuotaExceededException: " + exception.getMessage()));
         } else {
+            logger.error("Closing Websocket Session for resource {} with error: {}", resourceId, exception.getMessage(), exception);
             closeSession(session, CloseReasonUtil.makeSafeCloseReason(
                     CloseReason.CloseCodes.UNEXPECTED_CONDITION,
                     exception.getMessage()));
