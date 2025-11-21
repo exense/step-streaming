@@ -11,13 +11,13 @@
 
 	<!-- required metadata for maven central -->
 	<name>${project.groupId}:${project.artifactId}</name>
-	<description>Step streaming uploads/downloads API and partial implementation</description>
-	<url>https://step.exense.ch</url>
+	<description>Step Streaming</description>
+	<url>https://github.com/exense/step-streaming</url>
 
 	<licenses>
 		<license>
-			<name>Copyright (c) exense GmbH</name>
-			<url>https://exense.ch/</url>
+			<name>The GNU Affero General Public License, Version 3</name>
+			<url>https://www.gnu.org/licenses/#AGPL</url>
 		</license>
 	</licenses>
 
@@ -29,6 +29,13 @@
 			<email>support@exense.ch</email>
 		</developer>
 	</developers>
+
+	<scm>
+		<connection>scm:git:https://github.com/exense/step-streaming.git</connection>
+		<developerConnection>scm:git:https://github.com/exense/step-streaming.git</developerConnection>
+		<url>https://github.com/exense/step-streaming</url>
+	</scm>
+	<!-- metadata end -->
 
 	<!-- Reminder: don't forget to add all modules to the end of the dependencyManagement section just below, for export -->
 	<modules>
