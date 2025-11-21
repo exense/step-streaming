@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>step-streaming-impl-websocket</artifactId>
+    <name>${project.groupId}:${project.artifactId}</name>
     <packaging>pom</packaging>
 
     <modules>

@@ -11,6 +11,7 @@
 	</parent>
 
 	<artifactId>step-streaming-impl-server</artifactId>
+	<name>${project.groupId}:${project.artifactId}</name>
 	<packaging>jar</packaging>
 
 	<dependencies>
