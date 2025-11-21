@@ -198,7 +198,11 @@ public class WebsocketUploadClient {
         } catch (Exception exception) {
             closeCloseableOnException(inputStream, exception);
             closeCloseableOnException(outputStream, exception);
-            logger.error("Upload failed:", exception);
+            if (exception instanceof QuotaExceededException || exception.getCause() instanceof QuotaExceededException) {
+                logger.warn("Upload failed due to quota restrictions: {}", exception.getMessage());
+            } else {
+                logger.error("Upload failed:", exception);
+            }
             closeSessionAbnormally(exception.getMessage(), exception);
         }
     }
