@@ -29,7 +29,8 @@ public class LocalUploadTests {
         } finally {
             try {
                 producer.stop();
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
             Files.deleteIfExists(liveFile.toPath());
         }
     }
@@ -52,17 +53,19 @@ public class LocalUploadTests {
         } finally {
             try {
                 producer.stop();
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
             Files.deleteIfExists(liveFile.toPath());
             Files.deleteIfExists(tmpDir.toPath());
         }
     }
 
 
-    private static class LineProducer extends Thread{
+    private static class LineProducer extends Thread {
         private final File outputFile;
         private final int numberOfLines;
         private final long sleepBetween;
+
         LineProducer(File outputFile, int numberOfLines, long sleepBetweenMs) {
             this.outputFile = outputFile;
             this.numberOfLines = numberOfLines;
@@ -77,7 +80,7 @@ public class LocalUploadTests {
                     Thread.sleep(sleepBetween);
                 }
             } catch (Exception e) {
-                    throw new RuntimeException(e);
+                throw new RuntimeException(e);
             }
         }
     }

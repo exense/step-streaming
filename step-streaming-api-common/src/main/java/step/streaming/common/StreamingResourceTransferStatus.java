@@ -1,6 +1,7 @@
 package step.streaming.common;
 
-/** Transfer status of a streaming resource.
+/**
+ * Transfer status of a streaming resource.
  */
 public enum StreamingResourceTransferStatus {
     INITIATED,

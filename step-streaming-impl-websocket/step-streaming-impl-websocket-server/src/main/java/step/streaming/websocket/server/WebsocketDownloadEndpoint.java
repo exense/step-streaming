@@ -141,7 +141,7 @@ public class WebsocketDownloadEndpoint extends HalfCloseCompatibleEndpoint {
                 logger.debug("Notification sent.");
             } else {
                 logger.debug("Status notify failed (possibly client closed): {}",
-                        result.getException() != null ? result.getException().toString() : "unknown");
+                    result.getException() != null ? result.getException().toString() : "unknown");
             }
         });
     }

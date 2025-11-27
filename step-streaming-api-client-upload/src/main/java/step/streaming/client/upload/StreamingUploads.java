@@ -99,6 +99,7 @@ public class StreamingUploads {
      * If you need more control over the metadata, like specifying a different filename, directly use
      * {@link StreamingUploadProvider#startLiveTextFileUpload(File, StreamingResourceMetadata, Charset) of the provider.
      * <p>
+     *
      * @param textFile the text file to upload.
      * @param charset  the {@link Charset} of the source file; must not be {@code null}.
      * @return a {@link StreamingUpload} representing the active upload.
@@ -108,12 +109,12 @@ public class StreamingUploads {
      */
     public StreamingUpload startTextFileUpload(File textFile, Charset charset, String mimeType) throws QuotaExceededException, IOException {
         StreamingUploadSession session = provider.startLiveTextFileUpload(
-                textFile,
-                new StreamingResourceMetadata(
-                        textFile.getName(),
-                        mimeType,
-                        true),
-                Objects.requireNonNull(charset));
+            textFile,
+            new StreamingResourceMetadata(
+                textFile.getName(),
+                mimeType,
+                true),
+            Objects.requireNonNull(charset));
         return new StreamingUpload(session);
     }
 
@@ -154,11 +155,11 @@ public class StreamingUploads {
      */
     public StreamingUpload startBinaryFileUpload(File file, String mimeType) throws QuotaExceededException, IOException {
         StreamingUploadSession session = provider.startLiveBinaryFileUpload(
-                file,
-                new StreamingResourceMetadata(
-                        file.getName(),
-                        mimeType,
-                        false));
+            file,
+            new StreamingResourceMetadata(
+                file.getName(),
+                mimeType,
+                false));
         return new StreamingUpload(session);
     }
 

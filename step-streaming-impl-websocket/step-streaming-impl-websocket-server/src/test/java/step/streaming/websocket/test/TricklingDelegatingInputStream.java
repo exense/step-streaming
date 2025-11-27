@@ -1,4 +1,5 @@
 package step.streaming.websocket.test;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Objects;
@@ -21,10 +22,10 @@ public class TricklingDelegatingInputStream extends InputStream {
     /**
      * Constructs a TricklingDelegatingInputStream.
      *
-     * @param source      the underlying InputStream to read from
-     * @param totalBytes  the total number of bytes expected from the source
-     * @param duration    the duration over which to trickle the data
-     * @param timeUnit    the time unit of the duration
+     * @param source     the underlying InputStream to read from
+     * @param totalBytes the total number of bytes expected from the source
+     * @param duration   the duration over which to trickle the data
+     * @param timeUnit   the time unit of the duration
      */
     public TricklingDelegatingInputStream(InputStream source, long totalBytes, long duration, TimeUnit timeUnit) {
         this.source = Objects.requireNonNull(source, "source InputStream cannot be null");

@@ -39,7 +39,7 @@ public interface StreamingUploadProvider {
      * @param metadata     the metadata describing the file, such as file name and content type.
      * @return a {@link StreamingUploadSession} instance representing the active upload.
      * @throws QuotaExceededException if the upload failed due to quota limitations
-     * @throws IOException if the file does not exist, cannot be read, or another I/O error occurs.
+     * @throws IOException            if the file does not exist, cannot be read, or another I/O error occurs.
      * @see StreamingUploadSession#signalEndOfInput()
      * @see #startLiveTextFileUpload(File, StreamingResourceMetadata, Charset)
      */
@@ -72,7 +72,7 @@ public interface StreamingUploadProvider {
      * @param charset  the {@link Charset} (encoding) of the source file; must not be {@code null}.
      * @return a {@link StreamingUploadSession} instance representing the active upload.
      * @throws QuotaExceededException if the upload failed due to quota limitations
-     * @throws IOException if the file does not exist, cannot be read, or another I/O error occurs.
+     * @throws IOException            if the file does not exist, cannot be read, or another I/O error occurs.
      * @see StreamingUploadSession#signalEndOfInput()
      * @see #startLiveBinaryFileUpload(File, StreamingResourceMetadata)
      */

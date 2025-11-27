@@ -53,15 +53,15 @@ public class TestingStorageBackend extends FilesystemStreamingResourcesStorageBa
         if (!Files.exists(path)) return;
 
         Files.walk(path)
-                .sorted((a, b) -> b.compareTo(a)) // delete children before parents
-                .forEach(p -> {
-                    try {
-                        logger.debug("Cleaning up: deleting {} {}", p.toFile().isDirectory() ? "directory": "file", p);
-                        Files.delete(p);
-                    } catch (IOException e) {
-                        throw new RuntimeException("Failed to delete: " + p, e);
-                    }
-                });
+            .sorted((a, b) -> b.compareTo(a)) // delete children before parents
+            .forEach(p -> {
+                try {
+                    logger.debug("Cleaning up: deleting {} {}", p.toFile().isDirectory() ? "directory" : "file", p);
+                    Files.delete(p);
+                } catch (IOException e) {
+                    throw new RuntimeException("Failed to delete: " + p, e);
+                }
+            });
     }
 
     /**

@@ -45,7 +45,7 @@ public final class ExceptionsUtil {
         }
 
         throw new IllegalArgumentException(
-                "Cannot construct " + targetType.getName() + " to wrap " + e.getClass().getName(), e);
+            "Cannot construct " + targetType.getName() + " to wrap " + e.getClass().getName(), e);
     }
 
     private static <T extends Exception> T tryNew(Class<T> type, Class<?>[] sig, Object[] args) {

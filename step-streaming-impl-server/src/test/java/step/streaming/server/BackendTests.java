@@ -23,8 +23,8 @@ public class BackendTests {
     public void testUploadWithTwoDownloads() throws Exception {
         StreamingResourcesCatalogBackend catalog = new InMemoryCatalogBackend();
         StreamingResourceManager manager = new DefaultStreamingResourceManager(catalog, storage,
-                s -> null,
-                null
+            s -> null,
+            null
         );
         storage.cleanup();
     }

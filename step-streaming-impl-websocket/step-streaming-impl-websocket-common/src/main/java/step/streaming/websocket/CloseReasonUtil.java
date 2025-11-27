@@ -23,7 +23,9 @@ import java.nio.charset.StandardCharsets;
  */
 public class CloseReasonUtil {
 
-    /** Maximum byte length of the reason phrase, as defined in the specification. */
+    /**
+     * Maximum byte length of the reason phrase, as defined in the specification.
+     */
     public static final int MAX_REASON_BYTES = 123;
 
 

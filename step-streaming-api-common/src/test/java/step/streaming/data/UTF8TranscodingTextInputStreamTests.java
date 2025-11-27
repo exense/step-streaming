@@ -34,8 +34,8 @@ public class UTF8TranscodingTextInputStreamTests {
     public void testUtf16ToUtf8() throws Exception {
         // "こんにちは" (Hello in Japanese) in UTF-16LE
         byte[] utf16le = {
-                (byte) 0x53, (byte) 0x30, (byte) 0x93, (byte) 0x30, (byte) 0x6B, (byte) 0x30,
-                (byte) 0x61, (byte) 0x30, (byte) 0x6F, (byte) 0x30
+            (byte) 0x53, (byte) 0x30, (byte) 0x93, (byte) 0x30, (byte) 0x6B, (byte) 0x30,
+            (byte) 0x61, (byte) 0x30, (byte) 0x6F, (byte) 0x30
         };
         InputStream in = new UTF8TranscodingTextInputStream(new ByteArrayInputStream(utf16le), StandardCharsets.UTF_16LE);
         String result = readAll(in);
@@ -78,7 +78,6 @@ public class UTF8TranscodingTextInputStreamTests {
     }
 
 
-
     @Test
     public void testUtf8WithBom() throws Exception {
         byte[] bomUtf8 = new byte[]{(byte) 0xEF, (byte) 0xBB, (byte) 0xBF, 'H', 'i'};
@@ -91,8 +90,8 @@ public class UTF8TranscodingTextInputStreamTests {
     public void testUtf16LEWithBom() throws Exception {
         // UTF-16LE BOM + "Hi"
         byte[] bomUtf16LE = new byte[]{
-                (byte) 0xFF, (byte) 0xFE,  // BOM
-                'H', 0x00, 'i', 0x00     // "H", "i"
+            (byte) 0xFF, (byte) 0xFE,  // BOM
+            'H', 0x00, 'i', 0x00     // "H", "i"
         };
         InputStream in = new UTF8TranscodingTextInputStream(new ByteArrayInputStream(bomUtf16LE), StandardCharsets.UTF_16LE);
         String result = readAll(in);
@@ -103,8 +102,8 @@ public class UTF8TranscodingTextInputStreamTests {
     public void testUtf16LEWithConflictingBom() throws Exception {
         // UTF-16LE BOM + "Hi"
         byte[] bomUtf16LE = new byte[]{
-                (byte) 0xFF, (byte) 0xFE,  // BOM
-                'H', 0x00, 'i', 0x00     // "H", "i"
+            (byte) 0xFF, (byte) 0xFE,  // BOM
+            'H', 0x00, 'i', 0x00     // "H", "i"
         };
         // Wrong encoding given as argument!
         InputStream in = new UTF8TranscodingTextInputStream(new ByteArrayInputStream(bomUtf16LE), StandardCharsets.UTF_16BE);
@@ -120,8 +119,8 @@ public class UTF8TranscodingTextInputStreamTests {
     public void testUtf16BEWithBom() throws Exception {
         // UTF-16BE BOM + "Hi"
         byte[] bomUtf16BE = new byte[]{
-                (byte) 0xFE, (byte) 0xFF,  // BOM
-                0x00, 'H', 0x00, 'i'     // "H", "i"
+            (byte) 0xFE, (byte) 0xFF,  // BOM
+            0x00, 'H', 0x00, 'i'     // "H", "i"
         };
         InputStream in = new UTF8TranscodingTextInputStream(new ByteArrayInputStream(bomUtf16BE), StandardCharsets.UTF_16BE);
         String result = readAll(in);

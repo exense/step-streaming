@@ -23,8 +23,8 @@ public class UTF8TranscodingTextInputStream extends InputStream {
     private InputStream sourceStream;
     private final Charset declaredCharset;
     private final CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder()
-            .onMalformedInput(CodingErrorAction.REPLACE)
-            .onUnmappableCharacter(CodingErrorAction.REPLACE);
+        .onMalformedInput(CodingErrorAction.REPLACE)
+        .onUnmappableCharacter(CodingErrorAction.REPLACE);
 
     private final CharBuffer charBuffer = CharBuffer.allocate(1024);
     private final ByteBuffer byteBuffer = ByteBuffer.allocate(2048);
@@ -67,9 +67,9 @@ public class UTF8TranscodingTextInputStream extends InputStream {
 
     private boolean charsetSupportsBOM(Charset charset) {
         return charset.equals(StandardCharsets.UTF_8)
-                || charset.equals(StandardCharsets.UTF_16)
-                || charset.equals(StandardCharsets.UTF_16LE)
-                || charset.equals(StandardCharsets.UTF_16BE);
+            || charset.equals(StandardCharsets.UTF_16)
+            || charset.equals(StandardCharsets.UTF_16LE)
+            || charset.equals(StandardCharsets.UTF_16BE);
     }
 
     // This method is called lazily on read (and will only perform actual initialization on first read).
