@@ -116,7 +116,7 @@ public class WebsocketUploadClient {
             if (e instanceof ClosedChannelException || e.getCause() instanceof ClosedChannelException) {
                 if (closeReason != null) {
                     throw new IOException(
-                            "WebSocket closed by server: " + closeReason, e
+                        "WebSocket closed by server: " + closeReason, e
                     );
                 } else {
                     throw new IOException("WebSocket channel closed unexpectedly", e);

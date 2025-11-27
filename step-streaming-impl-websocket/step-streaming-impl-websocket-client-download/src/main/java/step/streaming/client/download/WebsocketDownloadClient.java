@@ -50,8 +50,10 @@ public class WebsocketDownloadClient implements AutoCloseable {
     // Request queue (serialized on event loop)
     private abstract static class Request {
         abstract void send(Session s) throws Exception;
+
         abstract String hint();
     }
+
     private final Deque<Request> requests = new ArrayDeque<>();
     private final AtomicLong requestIds = new AtomicLong();
     private volatile long inFlightReqId;
@@ -77,8 +79,8 @@ public class WebsocketDownloadClient implements AutoCloseable {
         try {
             endpoint = new Remote();
             session = container.connectToServer(endpoint,
-                    ClientEndpointConfig.Builder.create().build(),
-                    endpointUri);
+                ClientEndpointConfig.Builder.create().build(),
+                endpointUri);
             logger.info("Connected to {}, waiting for initial status...", endpointUri);
             try {
                 initialStatus.get(30, TimeUnit.SECONDS);
@@ -118,7 +120,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
             state = State.CLOSED;
             if (session.isOpen()) {
                 endpoint.closeSession(session, CloseReasonUtil.makeSafeCloseReason(
-                        CloseReason.CloseCodes.NORMAL_CLOSURE, "Client Session closed"));
+                    CloseReason.CloseCodes.NORMAL_CLOSURE, "Client Session closed"));
             }
             requests.clear();
             // We will shut down the executors in onSessionClose after fan-out.
@@ -137,7 +139,8 @@ public class WebsocketDownloadClient implements AutoCloseable {
 
             long id = requestIds.incrementAndGet();
             Request req = new Request() {
-                @Override void send(Session s) throws Exception {
+                @Override
+                void send(Session s) throws Exception {
                     state = State.AWAITING_DOWNLOAD;
                     inFlightReqId = id;
                     dataConsumer = streamConsumer;
@@ -145,7 +148,11 @@ public class WebsocketDownloadClient implements AutoCloseable {
                     s.getBasicRemote().sendText(new RequestChunkMessage(startOffset, endOffset).toString());
                     logger.debug("[SEND chunk {} POST] [{}] state={}, q={}", id, hint(), state, requests.size());
                 }
-                @Override String hint() { return "chunk[" + startOffset + "," + endOffset + "]"; }
+
+                @Override
+                String hint() {
+                    return "chunk[" + startOffset + "," + endOffset + "]";
+                }
             };
             enqueueOrStart(req);
         });
@@ -168,7 +175,8 @@ public class WebsocketDownloadClient implements AutoCloseable {
 
             long id = requestIds.incrementAndGet();
             Request req = new Request() {
-                @Override void send(Session s) throws Exception {
+                @Override
+                void send(Session s) throws Exception {
                     state = State.AWAITING_DOWNLOAD;
                     inFlightReqId = id;
                     WebsocketDownloadClient.this.linesConsumer = linesConsumer;
@@ -176,7 +184,11 @@ public class WebsocketDownloadClient implements AutoCloseable {
                     s.getBasicRemote().sendText(new RequestLinesMessage(startingLineIndex, linesCount).toString());
                     logger.debug("[SEND lines {} POST] [{}] state={}, q={}", id, hint(), state, requests.size());
                 }
-                @Override String hint() { return "lines[start=" + startingLineIndex + ",count=" + linesCount + "]"; }
+
+                @Override
+                String hint() {
+                    return "lines[start=" + startingLineIndex + ",count=" + linesCount + "]";
+                }
             };
             enqueueOrStart(req);
         });
@@ -236,7 +248,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
         runOnLoop(() -> {
             if (state == State.CLOSED) return;
             logger.debug("[TEXT IN] state={}, busy={}, q={}, inFlightReqId={}, loop=ws-dl-client-loop",
-                    state, busy, requests.size(), inFlightReqId);
+                state, busy, requests.size(), inFlightReqId);
             DownloadServerMessage msg = DownloadServerMessage.fromString(messageString);
 
             if (msg instanceof StatusChangedMessage) {
@@ -320,7 +332,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
 
     private void finishCurrent() {
         logger.debug("[FINISH start] state={}, busy={}, queueSize={}, inFlightReqId={}",
-                state, busy, requests.size(), inFlightReqId);
+            state, busy, requests.size(), inFlightReqId);
         state = State.READY;
         Request next = requests.pollFirst();
         if (next != null) {

@@ -115,7 +115,8 @@ public class StreamingResourceUploadContexts {
         for (StreamingResourceUploadContextListener listener : getListeners(uploadContextId)) {
             try {
                 listener.onResourceCreated(resourceId, metadata);
-            } catch (Exception ignored) {} // we don't have access to a logger here, but these methods must not throw exceptions anyway; this is just a safeguard.
+            } catch (Exception ignored) {
+            } // we don't have access to a logger here, but these methods must not throw exceptions anyway; this is just a safeguard.
         }
     }
 
@@ -135,22 +136,25 @@ public class StreamingResourceUploadContexts {
         for (StreamingResourceUploadContextListener listener : getListeners(uploadContextId)) {
             try {
                 listener.onResourceStatusChanged(resourceId, status);
-            } catch (Exception ignored) {} // we don't have access to a logger here, but these methods must not throw exceptions anyway; this is just a safeguard.
+            } catch (Exception ignored) {
+            } // we don't have access to a logger here, but these methods must not throw exceptions anyway; this is just a safeguard.
         }
     }
 
     /**
      * Notifies all registered listeners that an attempt to create a resource within the given context was refused.
      * This might happen for instance if there are quota restrictions on the number of permitted resources per context.
+     *
      * @param uploadContextId the upload context ID
-     * @param metadata metadata of the attempted upload
-     * @param reasonPhrase human-readable reason for refusing the upload
+     * @param metadata        metadata of the attempted upload
+     * @param reasonPhrase    human-readable reason for refusing the upload
      */
     public void onResourceCreationRefused(String uploadContextId, StreamingResourceMetadata metadata, String reasonPhrase) {
         for (StreamingResourceUploadContextListener listener : getListeners(uploadContextId)) {
             try {
                 listener.onResourceCreationRefused(metadata, reasonPhrase);
-            } catch (Exception ignored) {} // we don't have access to a logger here, but these methods must not throw exceptions anyway; this is just a safeguard.
+            } catch (Exception ignored) {
+            } // we don't have access to a logger here, but these methods must not throw exceptions anyway; this is just a safeguard.
         }
     }
 

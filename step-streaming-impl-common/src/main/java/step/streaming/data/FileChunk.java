@@ -40,5 +40,6 @@ public class FileChunk {
     }
 
     // Utility class
-    private FileChunk() {}
+    private FileChunk() {
+    }
 }

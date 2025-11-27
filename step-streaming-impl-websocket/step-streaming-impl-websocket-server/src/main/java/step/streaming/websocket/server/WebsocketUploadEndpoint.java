@@ -61,12 +61,12 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
     public void onOpen(Session session, EndpointConfig config) {
         this.session = session;
         session.getRequestParameterMap()
-                .getOrDefault(StreamingResourceUploadContext.PARAMETER_NAME, List.of())
-                .stream().findFirst().ifPresent(ctx -> uploadContextId = ctx);
+            .getOrDefault(StreamingResourceUploadContext.PARAMETER_NAME, List.of())
+            .stream().findFirst().ifPresent(ctx -> uploadContextId = ctx);
         if (manager.isUploadContextRequired() && uploadContextId == null) {
             closeSession(session, CloseReasonUtil.makeSafeCloseReason(
-                    CloseReason.CloseCodes.VIOLATED_POLICY,
-                    "Missing parameter " + StreamingResourceUploadContext.PARAMETER_NAME));
+                CloseReason.CloseCodes.VIOLATED_POLICY,
+                "Missing parameter " + StreamingResourceUploadContext.PARAMETER_NAME));
             return;
         }
         Optional.ofNullable(sessionsHandler).ifPresent(handler -> handler.register(session));
@@ -75,14 +75,14 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         // conceptually the same as reading the data directly from a stream, but better for
         // performance as it does not block Jetty threads.
         session.addMessageHandler(
-                ByteBuffer.class,
-                // DO NOT REPLACE WITH A LAMBDA -- this will trip up Jetty at runtime
-                new MessageHandler.Partial<ByteBuffer>() {
-                    @Override
-                    public void onMessage(ByteBuffer data, boolean last) {
-                        onDataPartial(data, last);
-                    }
+            ByteBuffer.class,
+            // DO NOT REPLACE WITH A LAMBDA -- this will trip up Jetty at runtime
+            new MessageHandler.Partial<ByteBuffer>() {
+                @Override
+                public void onMessage(ByteBuffer data, boolean last) {
+                    onDataPartial(data, last);
                 }
+            }
         );
 
         logger.debug("Session opened: {}", session.getId());
@@ -96,13 +96,13 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         if (exception instanceof QuotaExceededException) {
             // this one is handled specially by the client, and also logged again with a shorter warning on the server
             closeSession(session, CloseReasonUtil.makeSafeCloseReason(
-                    CloseReason.CloseCodes.VIOLATED_POLICY,
-                    "QuotaExceededException: " + exception.getMessage()));
+                CloseReason.CloseCodes.VIOLATED_POLICY,
+                "QuotaExceededException: " + exception.getMessage()));
         } else {
             logger.error("Closing Websocket Session for resource {} with error: {}", resourceId, exception.getMessage(), exception);
             closeSession(session, CloseReasonUtil.makeSafeCloseReason(
-                    CloseReason.CloseCodes.UNEXPECTED_CONDITION,
-                    exception.getMessage()));
+                CloseReason.CloseCodes.UNEXPECTED_CONDITION,
+                exception.getMessage()));
         }
     }
 
@@ -145,8 +145,8 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 }
                 if (!ack.checksum.equals(finishMessage.checksum)) {
                     closeSession(new RuntimeException(
-                            String.format("Checksum mismatch after upload! Client checksum=%s, server checksum=%s",
-                                    finishMessage.checksum, ack.checksum)));
+                        String.format("Checksum mismatch after upload! Client checksum=%s, server checksum=%s",
+                            finishMessage.checksum, ack.checksum)));
                     return;
                 }
                 var finalStatus = manager.markCompleted(resourceId);
@@ -206,21 +206,21 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
         super.onClose(session, closeReason);
         if (resourceId != null) {
             if (closeReason.getCloseCode() == CloseReason.CloseCodes.NORMAL_CLOSURE
-                    && closeReason.getReasonPhrase().equals(UploadProtocolMessage.CLOSEREASON_PHRASE_UPLOAD_COMPLETED)
-                    && state == State.FINISHED) {
+                && closeReason.getReasonPhrase().equals(UploadProtocolMessage.CLOSEREASON_PHRASE_UPLOAD_COMPLETED)
+                && state == State.FINISHED) {
                 logger.debug("Session closed: {}, resourceId={}, reason={}",
-                        session.getId(), resourceId, closeReason);
+                    session.getId(), resourceId, closeReason);
             } else {
                 StreamingResourceTransferStatus status = manager.getStatus(resourceId).getTransferStatus();
                 logger.warn("Upload session for resource {}, state {} was closed with reason {}, resource was left with status {}; marking upload as failed.",
-                        resourceId, state, closeReason, status);
+                    resourceId, state, closeReason, status);
 
                 if (uploadPipeline != null) {
                     // 1) ensure no more input is expected; let consumer drain what's already queued
                     uploadPipeline.closeInput();
                     try {
                         (uploadAcknowledgedMessage != null ? uploadAcknowledgedMessage : CompletableFuture.completedFuture(null))
-                                .get(ABNORMAL_CLOSE_DRAIN_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                            .get(ABNORMAL_CLOSE_DRAIN_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
                     } catch (Exception ignoredBecauseWereFailingAnyway) {
                     }
                 }
@@ -229,7 +229,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             }
         } else {
             logger.warn("Incomplete session (no resource ID) closed: session={}, state={}, reason={}",
-                    session.getId(), state, closeReason);
+                session.getId(), state, closeReason);
         }
     }
 
@@ -304,7 +304,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                 try {
                     ByteArrayOutputStream bytes = new ByteArrayOutputStream();
                     long processed = 0;
-                    for (byte[] chunk: chunks) {
+                    for (byte[] chunk : chunks) {
                         md5.update(chunk);
                         bytes.write(chunk);
                         processed += chunk.length;
@@ -337,7 +337,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             StringBuilder sb = new StringBuilder(digest.length * 2);
             for (byte b : digest) {
                 sb.append(Character.forDigit((b >>> 4) & 0xF, 16))
-                        .append(Character.forDigit(b & 0xF, 16));
+                    .append(Character.forDigit(b & 0xF, 16));
             }
             return sb.toString();
         }

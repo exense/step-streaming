@@ -23,7 +23,7 @@ public class FileChunkOutputStream extends OutputStream {
      *
      * @param file          the file to write to
      * @param startPosition the position in the file to begin writing
-     * @param paranoidSync if {@code true}, "rwd" mode is used for the backing {@link RandomAccessFile}, otherwise "rw".
+     * @param paranoidSync  if {@code true}, "rwd" mode is used for the backing {@link RandomAccessFile}, otherwise "rw".
      * @throws IOException if the file can't be opened or positioned
      */
     public FileChunkOutputStream(File file, long startPosition, boolean paranoidSync) throws IOException {

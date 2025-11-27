@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * may happen, for instance a keyword call in Step. A context's lifecycle MUST be registered using
  * {@link StreamingResourceUploadContexts#registerContext(StreamingResourceUploadContext)}
  * on instantiation, and unregistered using {@link StreamingResourceUploadContexts#unregisterContext(StreamingResourceUploadContext)}
- *
+ * <p>
  * A context is identified by a unique auto-generated ID, which may be passed around to identify it e.g. when an upload happens etc.
  * A context can carry arbitrary attributes (exposed as a read/write Map)
  *
@@ -34,8 +34,8 @@ public class StreamingResourceUploadContext {
     @Override
     public String toString() {
         return "StreamingResourceUploadContext{" +
-                "contextId='" + contextId + '\'' +
-                ", attributes=" + attributes +
-                '}';
+            "contextId='" + contextId + '\'' +
+            ", attributes=" + attributes +
+            '}';
     }
 }

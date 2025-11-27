@@ -149,7 +149,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     private void persistAndNotifyOnSizeChange(String resourceId, long updatedSize, Long linebreakCount) throws QuotaExceededException, IOException {
         onSizeChanged(resourceId, updatedSize);
         StreamingResourceStatusUpdate update = new StreamingResourceStatusUpdate(
-                StreamingResourceTransferStatus.IN_PROGRESS, updatedSize, linebreakCount
+            StreamingResourceTransferStatus.IN_PROGRESS, updatedSize, linebreakCount
         );
         logger.debug("Updating streaming resource: {}, statusUpdate={}", resourceId, update);
         StreamingResourceStatus status = catalog.updateStatus(resourceId, update);
@@ -239,8 +239,8 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     @Override
     public void registerStatusListener(String resourceId, Consumer<StreamingResourceStatus> listener) {
         statusListeners
-                .computeIfAbsent(resourceId, k -> new CopyOnWriteArrayList<>())
-                .add(listener);
+            .computeIfAbsent(resourceId, k -> new CopyOnWriteArrayList<>())
+            .add(listener);
 
         logger.debug("Registered status listener for {}", resourceId);
 
@@ -344,7 +344,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
         // Get required linebreaks -- this method performs validations and inserts an artificial LB at EOF if needed.
         List<Long> linebreakPositions = getLinebreakPositions(resourceId, firstLbIndex, linebreaksCount);
 
-        List<String> lines = new ArrayList<>((int)count);
+        List<String> lines = new ArrayList<>((int) count);
 
         // Determine the complete range of bytes we need to read:
         // Start **after** the previous linebreak (or at beginning of file)

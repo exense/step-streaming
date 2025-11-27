@@ -126,10 +126,10 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param fileToStream the binary file to upload.
      * @param metadata     metadata describing the file to upload.
      * @return a {@link StreamingUploadSession} representing the active upload.
-     * @throws QuotaExceededException if the server signals that the upload failed due to quota limitations
-     * @throws NullPointerException if any of the arguments is missing
+     * @throws QuotaExceededException   if the server signals that the upload failed due to quota limitations
+     * @throws NullPointerException     if any of the arguments is missing
      * @throws IllegalArgumentException if an invalid argument combination is provided
-     * @throws IOException if the file cannot be read or an error occurs during stream setup.
+     * @throws IOException              if the file cannot be read or an error occurs during stream setup.
      */
     @Override
     public StreamingUploadSession startLiveBinaryFileUpload(File fileToStream, StreamingResourceMetadata metadata) throws QuotaExceededException, IOException {
@@ -149,8 +149,8 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param charset  the character encoding of the source file.
      * @return a {@link StreamingUploadSession} representing the active upload.
      * @throws QuotaExceededException if the upload failed due to quota limitations
-     * @throws NullPointerException if any of the arguments is missing
-     * @throws IOException if the file cannot be read or an error occurs during stream setup.
+     * @throws NullPointerException   if any of the arguments is missing
+     * @throws IOException            if the file cannot be read or an error occurs during stream setup.
      */
     @Override
     public StreamingUploadSession startLiveTextFileUpload(File textFile, StreamingResourceMetadata metadata, Charset charset) throws QuotaExceededException, IOException {
@@ -172,7 +172,7 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param convertFromCharset if non-null, the character set used to decode the file before converting to UTF-8.
      * @return a {@link StreamingUploadSession} representing the active upload.
      * @throws QuotaExceededException if the upload failed due to quota limitations
-     * @throws IOException if the file cannot be read or the stream cannot be created
+     * @throws IOException            if the file cannot be read or the stream cannot be created
      */
     protected StreamingUploadSession startLiveFileUpload(File fileToStream, StreamingResourceMetadata metadata, Charset convertFromCharset) throws QuotaExceededException, IOException {
         if (!admissionSemaphore.tryAcquire()) {
@@ -184,8 +184,8 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
             EndOfInputSignal endOfInputSignal = new EndOfInputSignal();
             LiveFileInputStream liveInputStream = new LiveFileInputStream(fileToStream, endOfInputSignal, uploadFilePollInterval);
             InputStream uploadInputStream = convertFromCharset == null
-                    ? liveInputStream
-                    : new UTF8TranscodingTextInputStream(liveInputStream, convertFromCharset);
+                ? liveInputStream
+                : new UTF8TranscodingTextInputStream(liveInputStream, convertFromCharset);
             InputStream limitedBufferInputStream = new LimitedBufferInputStream(uploadInputStream, uploadBufferSize);
             StreamingUploadSession session = startLiveFileUpload(limitedBufferInputStream, metadata, endOfInputSignal);
             session.onClose(ignoredMessage -> activeSessions.remove(session));
@@ -206,9 +206,9 @@ public abstract class AbstractStreamingUploadProvider implements StreamingUpload
      * @param sourceInputStream the input stream representing the upload content.
      * @param metadata          the metadata describing the resource.
      * @param endOfInputSignal  the signal used to detect upload completion or cancellation.
-     * @throws QuotaExceededException if the upload failed due to quota limitations
      * @return a {@link StreamingUploadSession} representing the active upload.
-     * @throws IOException if the stream setup or transfer initiation fails.
+     * @throws QuotaExceededException if the upload failed due to quota limitations
+     * @throws IOException            if the stream setup or transfer initiation fails.
      */
     protected abstract StreamingUploadSession startLiveFileUpload(InputStream sourceInputStream,
                                                                   StreamingResourceMetadata metadata,

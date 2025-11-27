@@ -41,11 +41,13 @@ public class LocalStreamingUploadSession extends BasicStreamingUploadSession {
         } finally {
             try {
                 inputStream.close();
-            } catch (IOException ignored) {}
+            } catch (IOException ignored) {
+            }
             if (actualOutputStream != null) {
                 try {
                     actualOutputStream.close();
-                } catch (IOException ignored) {}
+                } catch (IOException ignored) {
+                }
             }
         }
     }
