@@ -28,7 +28,7 @@ public interface StreamingResourcesStorageBackend {
     /**
      * Prepares for writing data to a new resource.
      *
-     * @param resourceId           internal resource identifier
+     * @param resourceId         internal resource identifier
      * @param enableLineCounting flag to indicate whether line counting must be supported
      * @throws IOException if initialization fails
      */
@@ -70,6 +70,7 @@ public interface StreamingResourcesStorageBackend {
 
     /**
      * Handles a failed upload. Return value indicates whether the data still exists ({@code true}), or was deleted ({@code false})
+     *
      * @param resourceId internal resource identifier
      * @return return value indicating if the data still exists
      */

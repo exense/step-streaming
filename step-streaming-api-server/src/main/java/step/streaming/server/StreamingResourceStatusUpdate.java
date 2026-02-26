@@ -39,9 +39,9 @@ public class StreamingResourceStatusUpdate {
     @Override
     public String toString() {
         return "StreamingResourceStatusUpdate{" +
-                "transferStatus=" + transferStatus +
-                ", currentSize=" + currentSize +
-                ", numberOfLines=" + numberOfLines +
-                '}';
+            "transferStatus=" + transferStatus +
+            ", currentSize=" + currentSize +
+            ", numberOfLines=" + numberOfLines +
+            '}';
     }
 }

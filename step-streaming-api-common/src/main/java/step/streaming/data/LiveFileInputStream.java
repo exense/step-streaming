@@ -32,8 +32,8 @@ public class LiveFileInputStream extends EndOfInputRequiringInputStream {
      * Constructs a new {@code LiveFileInputStream} for the given file, using the provided signal
      * to determine when the end of the input is truly reached.
      *
-     * @param file              the file to read from; must not be {@code null}
-     * @param finishedSignal    the signal that determines when the file is finished being written
+     * @param file               the file to read from; must not be {@code null}
+     * @param finishedSignal     the signal that determines when the file is finished being written
      * @param pollIntervalMillis the polling interval in milliseconds to check the signal when at EOF
      * @throws IOException if the file cannot be opened for reading
      */

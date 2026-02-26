@@ -100,10 +100,10 @@ public class LinebreakIndexFile implements AutoCloseable, LinebreakIndex {
 
     private long decodeFromBuffer() throws IOException {
         return ((long) (entryBuffer[0] & 0xFF) << 32)
-                | ((long) (entryBuffer[1] & 0xFF) << 24)
-                | ((long) (entryBuffer[2] & 0xFF) << 16)
-                | ((long) (entryBuffer[3] & 0xFF) << 8)
-                | ((long) (entryBuffer[4] & 0xFF));
+            | ((long) (entryBuffer[1] & 0xFF) << 24)
+            | ((long) (entryBuffer[2] & 0xFF) << 16)
+            | ((long) (entryBuffer[3] & 0xFF) << 8)
+            | ((long) (entryBuffer[4] & 0xFF));
     }
 
 
@@ -140,8 +140,8 @@ public class LinebreakIndexFile implements AutoCloseable, LinebreakIndex {
 
         if (startIndex < 0 || count < 0 || startIndex + count > entries) {
             throw new IndexOutOfBoundsException(String.format(
-                    "Invalid range: startIndex=%d, count=%d, totalEntries=%d. Valid range is [0, %d]",
-                    startIndex, count, entries, entries
+                "Invalid range: startIndex=%d, count=%d, totalEntries=%d. Valid range is [0, %d]",
+                startIndex, count, entries, entries
             ));
         }
 

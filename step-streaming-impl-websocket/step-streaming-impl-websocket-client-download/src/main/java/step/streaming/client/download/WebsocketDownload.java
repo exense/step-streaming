@@ -105,7 +105,7 @@ public class WebsocketDownload extends AbstractStreamingTransfer implements Stre
      * Fails if another chunk stream is still active and open.
      *
      * @param startOffset the starting byte offset (inclusive)
-     * @param endOffset the ending byte offset (exclusive)
+     * @param endOffset   the ending byte offset (exclusive)
      * @return an input stream for the requested chunk
      * @throws IOException if the chunk range is invalid or the transfer cannot proceed
      */
@@ -232,9 +232,9 @@ public class WebsocketDownload extends AbstractStreamingTransfer implements Stre
                     return getChunkStream(bytesRead, status.getCurrentSize());
                 }
                 if (status.getTransferStatus() == StreamingResourceTransferStatus.COMPLETED
-                        || status.getTransferStatus() == StreamingResourceTransferStatus.FAILED) {
+                    || status.getTransferStatus() == StreamingResourceTransferStatus.FAILED) {
                     logger.debug("Transfer status is {} and all bytes were received, signaling end of data",
-                            status.getTransferStatus());
+                        status.getTransferStatus());
                     return null; // normal EOF
                 }
 

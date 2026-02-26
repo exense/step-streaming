@@ -33,8 +33,8 @@ public class DefaultStreamingResourceManagerTest {
         storageBackend = new TestingStorageBackend(StreamingResourcesStorageBackend.DEFAULT_NOTIFY_INTERVAL_MILLIS, false);
         catalogBackend = new InMemoryCatalogBackend();
         manager = new DefaultStreamingResourceManager(catalogBackend, storageBackend,
-                s -> null,
-                null
+            s -> null,
+            null
         );
     }
 

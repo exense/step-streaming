@@ -116,7 +116,7 @@ public class LinebreakIndexFileTests {
                             long tailStart = Math.max(0, available - assertTailLength);
                             long tailCount = available - tailStart;
                             List<Long> actual = reader
-                                    .getLinebreakPositions(tailStart, (int) tailCount);
+                                .getLinebreakPositions(tailStart, (int) tailCount);
 
                             // System.out.println(actual); // in case someone wants to debug :-D -- examples:
                             // beginning: [1000, 1010, 1020, 1030, 1040, 1050]
@@ -131,12 +131,12 @@ public class LinebreakIndexFileTests {
                             long tailStart = Math.max(0, available - assertTailLength);
                             long tailCount = available - tailStart;
                             List<Long> actualFromLongLived = longLivedReader
-                                    .getLinebreakPositions(tailStart, (int) tailCount);
+                                .getLinebreakPositions(tailStart, (int) tailCount);
 
                             for (int i = 0; i < actualFromLongLived.size(); i++) {
                                 long expected = baseOffset + (tailStart + i) * 10L;
                                 assertEquals("Mismatch from long-lived reader at index " + (tailStart + i),
-                                        expected, (long) actualFromLongLived.get(i));
+                                    expected, (long) actualFromLongLived.get(i));
                             }
                         }
 
@@ -166,7 +166,7 @@ public class LinebreakIndexFileTests {
     @Test
     public void performanceTest() throws Exception {
         long count = 1_000_000L;
-        try(LinebreakIndexFile index = new LinebreakIndexFile(rawIndexFile, 0, LinebreakIndexFile.Mode.WRITE)) {
+        try (LinebreakIndexFile index = new LinebreakIndexFile(rawIndexFile, 0, LinebreakIndexFile.Mode.WRITE)) {
             long d = System.currentTimeMillis();
             for (long i = 0; i < count; ++i) {
                 Assert.assertEquals(i + 1, index.addLinebreakPosition(i));

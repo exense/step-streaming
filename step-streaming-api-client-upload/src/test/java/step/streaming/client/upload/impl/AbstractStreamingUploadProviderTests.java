@@ -53,7 +53,8 @@ public class AbstractStreamingUploadProviderTests {
                     // Here, we're "inside" the semaphore holding a permit
                     uploadStarted.complete(null);
                     Thread.sleep(250);
-                } catch (InterruptedException ignored) {}
+                } catch (InterruptedException ignored) {
+                }
                 return session;
             }
         });

@@ -31,8 +31,8 @@ public class StreamingResourceMetadata {
      * Constructs a {@code StreamingResourceMetadata} with the given information.
      * Validates the MIME type format and filename upon construction.
      *
-     * @param filename the name of the file (must not be {@code null} or empty)
-     * @param mimeType the MIME type of the file
+     * @param filename           the name of the file (must not be {@code null} or empty)
+     * @param mimeType           the MIME type of the file
      * @param supportsLineAccess flag to indicate whether access by line number is possible for this resource
      * @throws NullPointerException     if filename is {@code null}
      * @throws IllegalArgumentException if MIME type is {@code null} or invalid, or filename is empty
@@ -56,7 +56,7 @@ public class StreamingResourceMetadata {
      * Sets the filename.
      *
      * @param filename the filename to set (must not be {@code null})
-     * @throws NullPointerException if filename is {@code null}
+     * @throws NullPointerException     if filename is {@code null}
      * @throws IllegalArgumentException if filename is empty
      */
     public void setFilename(String filename) {
@@ -99,9 +99,9 @@ public class StreamingResourceMetadata {
     @Override
     public String toString() {
         return "StreamingResourceMetadata{" +
-                "filename='" + filename + '\'' +
-                ", mimeType='" + mimeType + '\'' +
-                ", supportsLineAccess=" + supportsLineAccess +
-                '}';
+            "filename='" + filename + '\'' +
+            ", mimeType='" + mimeType + '\'' +
+            ", supportsLineAccess=" + supportsLineAccess +
+            '}';
     }
 }

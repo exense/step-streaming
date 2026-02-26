@@ -35,6 +35,7 @@ public interface StreamingUploadSession extends StreamingTransfer {
 
     /**
      * Returns the {@link StreamingResourceMetadata} of the upload being performed.
+     *
      * @return the upload metadata.
      */
     StreamingResourceMetadata getMetadata();

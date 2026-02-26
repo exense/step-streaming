@@ -38,7 +38,8 @@ public class FileChunkInputStream extends InputStream {
         if (end > raf.length()) {
             try {
                 raf.close();
-            } catch (IOException ignored) {}
+            } catch (IOException ignored) {
+            }
             throw new IllegalArgumentException("End position exceeds file length");
         }
 

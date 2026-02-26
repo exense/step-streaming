@@ -152,12 +152,12 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
         // This will auto-close the input and output streams, but we need to manually handle the indexFile because it
         // may be null.
         try (
-                input;
-                OutputStream checkpointingOut = new CheckpointingOutputStream(
-                        actualOutputStreamDeterminingFunction.apply(FileChunk.getOutputStream(file, startOffset, paranoidSyncMode)),
-                        flushAndNotifyIntervalMillis,
-                        fileSizeConsumer
-                )
+            input;
+            OutputStream checkpointingOut = new CheckpointingOutputStream(
+                actualOutputStreamDeterminingFunction.apply(FileChunk.getOutputStream(file, startOffset, paranoidSyncMode)),
+                flushAndNotifyIntervalMillis,
+                fileSizeConsumer
+            )
         ) {
             long written = input.transferTo(checkpointingOut);
             logger.debug("Wrote {} bytes to file {}", written, file);
@@ -209,8 +209,8 @@ public class FilesystemStreamingResourcesStorageBackend implements StreamingReso
 
     private File buildFilePath(String hashedPath, String originalId) {
         String relPath = hashedPath.length() >= 4
-                ? hashedPath.substring(0, 2) + File.separator + hashedPath.substring(2, 4)
-                : "xx" + File.separator + "yy";
+            ? hashedPath.substring(0, 2) + File.separator + hashedPath.substring(2, 4)
+            : "xx" + File.separator + "yy";
         return new File(baseDirectory, relPath + File.separator + originalId + ".bin");
     }
 

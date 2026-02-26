@@ -2,7 +2,7 @@
 
 This is a standalone project providing the functionality to implement "streaming" up- and downloads.
 
-It is primarily meant to be used within the Step product, but it could also be used standalone. 
+It is primarily meant to be used within the Step product, but it could also be used standalone.
 
 "Streaming" here has a slightly special meaning. The purpose is to allow downloads of resources that are
 still being produced. We provide a reference implementation based on Websockets.
@@ -22,8 +22,12 @@ still being produced. We provide a reference implementation based on Websockets.
 8. This implementation has an additional benefit: clients may also request only parts of a file, for instance for client-side pagination of large log files.
 
 ## Project structure
-There are currently 7 root-level modules: 4 for the API definitions (common, server, client-upload, client-download), and 2 containing (potentially partial) implementation classes (impl-common, impl-server). The Websocket implementation (impl-websocket) is provided as another module, with submodules mirroring the API modules.
 
-Note that nontrivial Unit tests are consolidated in the websocket server module, because a full "infrastructure" including client and server parts is required for meaningful tests.
+There are currently 7 root-level modules: 4 for the API definitions (common, server, client-upload, client-download),
+and 2 containing (potentially partial) implementation classes (impl-common, impl-server). The Websocket implementation (
+impl-websocket) is provided as another module, with submodules mirroring the API modules.
+
+Note that nontrivial Unit tests are consolidated in the websocket server module, because a full "infrastructure"
+including client and server parts is required for meaningful tests.
 
 

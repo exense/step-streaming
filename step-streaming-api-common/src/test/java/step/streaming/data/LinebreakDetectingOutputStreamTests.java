@@ -18,7 +18,7 @@ public class LinebreakDetectingOutputStreamTests {
         List<Long> detectedPositions = new ArrayList<>();
 
         try (LinebreakDetectingOutputStream stream =
-                     new LinebreakDetectingOutputStream(target, detectedPositions::add)) {
+                 new LinebreakDetectingOutputStream(target, detectedPositions::add)) {
 
             String input = "\nabc\ndef\nghi";
             byte[] bytes = input.getBytes(StandardCharsets.UTF_8);
@@ -40,7 +40,7 @@ public class LinebreakDetectingOutputStreamTests {
         byte[] data = "line1\nline2\nno linebreak".getBytes(StandardCharsets.UTF_8);
 
         try (LinebreakDetectingOutputStream stream =
-                     new LinebreakDetectingOutputStream(target, detectedPositions::add)) {
+                 new LinebreakDetectingOutputStream(target, detectedPositions::add)) {
             stream.write(data, 0, data.length);
         }
 
@@ -54,7 +54,7 @@ public class LinebreakDetectingOutputStreamTests {
         List<Long> detectedPositions = new ArrayList<>();
 
         try (LinebreakDetectingOutputStream stream =
-                     new LinebreakDetectingOutputStream(target, detectedPositions::add)) {
+                 new LinebreakDetectingOutputStream(target, detectedPositions::add)) {
 
             stream.write("abc\n".getBytes(StandardCharsets.UTF_8));
             stream.write('x');
@@ -73,7 +73,7 @@ public class LinebreakDetectingOutputStreamTests {
         List<Long> detectedPositions = new ArrayList<>();
 
         try (LinebreakDetectingOutputStream stream =
-                     new LinebreakDetectingOutputStream(target, detectedPositions::add)) {
+                 new LinebreakDetectingOutputStream(target, detectedPositions::add)) {
             stream.write("abcdefg".getBytes(StandardCharsets.UTF_8));
         }
 
@@ -90,7 +90,7 @@ public class LinebreakDetectingOutputStreamTests {
         byte[] data = input.getBytes(StandardCharsets.UTF_8);
 
         try (LinebreakDetectingOutputStream stream =
-                     new LinebreakDetectingOutputStream(target, detectedPositions::add)) {
+                 new LinebreakDetectingOutputStream(target, detectedPositions::add)) {
             stream.write(data);
         }
 

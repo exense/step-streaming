@@ -94,8 +94,8 @@ public class StreamingResourceEndpointTests {
         catalogBackend = new InMemoryCatalogBackend();
         referenceProducer = new URITemplateBasedReferenceProducer(null, WebsocketDownloadEndpoint.DEFAULT_ENDPOINT_URL, WebsocketDownloadEndpoint.DEFAULT_PARAMETER_NAME);
         manager = new TestingResourceManager(catalogBackend, storageBackend,
-                referenceProducer,
-                new StreamingResourceUploadContexts()
+            referenceProducer,
+            new StreamingResourceUploadContexts()
         );
         server = new TestingWebsocketServer().withEndpointConfigs(uploadConfig(), downloadConfig()).start();
         referenceProducer.setBaseUri(server.getURI());
@@ -114,24 +114,24 @@ public class StreamingResourceEndpointTests {
 
     private ServerEndpointConfig uploadConfig() {
         return ServerEndpointConfig.Builder.create(WebsocketUploadEndpoint.class, WebsocketUploadEndpoint.DEFAULT_ENDPOINT_URL)
-                .configurator(new ServerEndpointConfig.Configurator() {
-                    @Override
-                    public <T> T getEndpointInstance(Class<T> endpointClass) throws InstantiationException {
-                        return endpointClass.cast(new WebsocketUploadEndpoint(manager, sessionsHandler));
-                    }
-                })
-                .build();
+            .configurator(new ServerEndpointConfig.Configurator() {
+                @Override
+                public <T> T getEndpointInstance(Class<T> endpointClass) throws InstantiationException {
+                    return endpointClass.cast(new WebsocketUploadEndpoint(manager, sessionsHandler));
+                }
+            })
+            .build();
     }
 
     private ServerEndpointConfig downloadConfig() {
         return ServerEndpointConfig.Builder.create(WebsocketDownloadEndpoint.class, WebsocketDownloadEndpoint.DEFAULT_ENDPOINT_URL)
-                .configurator(new ServerEndpointConfig.Configurator() {
-                    @Override
-                    public <T> T getEndpointInstance(Class<T> endpointClass) throws InstantiationException {
-                        return endpointClass.cast(new WebsocketDownloadEndpoint(manager, sessionsHandler, WebsocketDownloadEndpoint.DEFAULT_PARAMETER_NAME));
-                    }
-                })
-                .build();
+            .configurator(new ServerEndpointConfig.Configurator() {
+                @Override
+                public <T> T getEndpointInstance(Class<T> endpointClass) throws InstantiationException {
+                    return endpointClass.cast(new WebsocketDownloadEndpoint(manager, sessionsHandler, WebsocketDownloadEndpoint.DEFAULT_PARAMETER_NAME));
+                }
+            })
+            .build();
     }
 
     @Test
@@ -227,9 +227,9 @@ public class StreamingResourceEndpointTests {
         AtomicReference<String> downloadChecksum = new AtomicReference<>();
         Thread downloadThread = new Thread(() -> {
             try (
-                    CheckpointingOutputStream out = new CheckpointingOutputStream(OutputStream.nullOutputStream(), 500, read ->
-                            logger.info("Download status: {} bytes currently transferred", read));
-                    MD5CalculatingInputStream downloadStream = new MD5CalculatingInputStream(download.getInputStream());
+                CheckpointingOutputStream out = new CheckpointingOutputStream(OutputStream.nullOutputStream(), 500, read ->
+                    logger.info("Download status: {} bytes currently transferred", read));
+                MD5CalculatingInputStream downloadStream = new MD5CalculatingInputStream(download.getInputStream());
             ) {
                 long downloadSize = downloadStream.transferTo(out);
                 downloadStream.close();
@@ -272,9 +272,9 @@ public class StreamingResourceEndpointTests {
         AtomicReference<String> downloadChecksum = new AtomicReference<>();
         Thread downloadThread = new Thread(() -> {
             try (
-                    CheckpointingOutputStream out = new CheckpointingOutputStream(OutputStream.nullOutputStream(), 500, read ->
-                            logger.info("Download status: {} bytes currently transferred", read));
-                    MD5CalculatingInputStream downloadStream = new MD5CalculatingInputStream(download.getInputStream());
+                CheckpointingOutputStream out = new CheckpointingOutputStream(OutputStream.nullOutputStream(), 500, read ->
+                    logger.info("Download status: {} bytes currently transferred", read));
+                MD5CalculatingInputStream downloadStream = new MD5CalculatingInputStream(download.getInputStream());
             ) {
                 long downloadSize = downloadStream.transferTo(out);
                 downloadStream.close();
