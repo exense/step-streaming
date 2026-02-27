@@ -116,7 +116,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
             try {
                 resourceId = manager.registerNewResource(metadata, uploadContextId);
                 StreamingResourceReference reference = manager.getReferenceFor(resourceId);
-                logger.info("{}: Starting streaming upload, metadata={}", resourceId, metadata);
+                logger.debug("{}: Starting streaming upload, metadata={}", resourceId, metadata);
 
                 uploadPipeline = new UploadPipeline(resourceId, manager);
                 uploadAcknowledgedMessage = uploadPipeline.startConsumer();
@@ -156,7 +156,7 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                     finalAck = new UploadAcknowledgedMessage(ack.size, finalStatus.getNumberOfLines(), ack.checksum);
                 }
                 state = State.FINISHED;
-                logger.info("{} Upload complete, sending acknowledge message: {}", resourceId, finalAck);
+                logger.debug("{} Upload complete, sending acknowledge message: {}", resourceId, finalAck);
                 session.getAsyncRemote().sendText(finalAck.toString(), result -> {
                     if (!result.isOK()) {
                         logger.error("{}: failed to send upload acknowledge", resourceId, result.getException());
@@ -279,8 +279,8 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
 
         void put(byte[] chunk) {
             int queued = batchProcessor.add(chunk);
-            if (queued > 0 && logger.isDebugEnabled()) {
-                logger.debug("{} Q: Queue size now {}", resourceId, queued);
+            if (queued > 0 && logger.isTraceEnabled()) {
+                logger.trace("{} Q: Queue size now {}", resourceId, queued);
             }
         }
 
@@ -314,9 +314,9 @@ public class WebsocketUploadEndpoint extends HalfCloseCompatibleEndpoint {
                             manager.writeChunk(resourceId, combined, closed);
                         }
                         bytesWritten.addAndGet(processed);
-                        if (logger.isDebugEnabled()) {
+                        if (logger.isTraceEnabled()) {
                             // unless something is horribly wrong, queue size should be back to 0
-                            logger.debug("{} D: Queue size now {}", resourceId, batchProcessor.getCurrentBatchSize());
+                            logger.trace("{} D: Queue size now {}", resourceId, batchProcessor.getCurrentBatchSize());
                         }
                         if (closed) {
                             String checksum = toHex(md5.digest());
