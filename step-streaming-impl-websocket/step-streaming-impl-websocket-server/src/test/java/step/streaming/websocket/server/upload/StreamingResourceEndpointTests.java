@@ -423,6 +423,7 @@ public class StreamingResourceEndpointTests {
             } catch (IOException expected) {
 
             }
+            Thread.sleep(100);
             var download = new WebsocketDownload(reference);
             ByteArrayOutputStream data = new ByteArrayOutputStream();
             try (InputStream in = download.getInputStream()) {
