@@ -68,10 +68,11 @@ public abstract class AbstractStreamingTransfer implements StreamingTransfer {
         }
     }
 
-    /** Invoked when a status callback failed.
+    /**
+     * Invoked when a status callback failed.
      * The default implementation does nothing; override in subclasses e.g. for logging purposes.
      *
-     * @param callback the failed callback
+     * @param callback  the failed callback
      * @param exception the exception that was thrown
      */
     protected void onStatusCallbackFailed(Consumer<StreamingResourceStatus> callback, Exception exception) {

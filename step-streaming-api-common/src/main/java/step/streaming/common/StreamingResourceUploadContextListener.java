@@ -32,7 +32,8 @@ public interface StreamingResourceUploadContextListener {
     /**
      * Called when a streaming upload was requested by a client, but was refused by the server, for instance
      * due to quota restrictions.
-     * @param metadata the resource metadata associated with the rejected upload request
+     *
+     * @param metadata     the resource metadata associated with the rejected upload request
      * @param reasonPhrase a human-readable explanation for refusing the upload
      */
     void onResourceCreationRefused(StreamingResourceMetadata metadata, String reasonPhrase);

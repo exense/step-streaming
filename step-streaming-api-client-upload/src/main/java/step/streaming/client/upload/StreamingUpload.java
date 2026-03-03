@@ -64,11 +64,11 @@ public class StreamingUpload {
      * @param timeout the maximum time to wait for the final status; must not be {@code null}.
      * @return the final {@link StreamingResourceStatus} of the upload.
      * @throws QuotaExceededException if the upload failed due to quota limitations
-     * @throws NullPointerException if {@code timeout} is {@code null}.
-     * @throws InterruptedException if the current thread is interrupted while waiting.
-     * @throws ExecutionException if the upload completed exceptionally; the cause can be
-     *                             retrieved from {@link ExecutionException#getCause()}.
-     * @throws TimeoutException if the given timeout elapses before the final status is available.
+     * @throws NullPointerException   if {@code timeout} is {@code null}.
+     * @throws InterruptedException   if the current thread is interrupted while waiting.
+     * @throws ExecutionException     if the upload completed exceptionally; the cause can be
+     *                                retrieved from {@link ExecutionException#getCause()}.
+     * @throws TimeoutException       if the given timeout elapses before the final status is available.
      */
     public StreamingResourceStatus complete(Duration timeout) throws QuotaExceededException, ExecutionException, InterruptedException, TimeoutException {
         Objects.requireNonNull(timeout);
@@ -94,10 +94,9 @@ public class StreamingUpload {
      *
      * @return the final {@link StreamingResourceStatus} of the upload.
      * @throws QuotaExceededException if the upload failed due to quota limitations
-     * @throws InterruptedException if the current thread is interrupted while waiting.
-     * @throws ExecutionException if the upload completed exceptionally; the cause can be
-     *                             retrieved from {@link ExecutionException#getCause()}.
-     *
+     * @throws InterruptedException   if the current thread is interrupted while waiting.
+     * @throws ExecutionException     if the upload completed exceptionally; the cause can be
+     *                                retrieved from {@link ExecutionException#getCause()}.
      * @see #complete(Duration)
      */
     public StreamingResourceStatus complete() throws QuotaExceededException, ExecutionException, InterruptedException {
@@ -131,6 +130,7 @@ public class StreamingUpload {
      * The implementation will internally use a
      * {@link java.util.concurrent.CancellationException} with the message
      * {@code "Cancelled by user"}.
+     *
      * @see #cancel(Throwable)
      */
     public void cancel() {

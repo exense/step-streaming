@@ -18,11 +18,11 @@ public class ThreadPools {
 
     public static ExecutorService createPoolExecutor(String threadPrefix, int poolSize, int queueCapacity) {
         return new ThreadPoolExecutor(
-                poolSize,
-                poolSize,
-                0L, TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(queueCapacity),
-                namedDaemon(threadPrefix)
+            poolSize,
+            poolSize,
+            0L, TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(queueCapacity),
+            namedDaemon(threadPrefix)
         );
     }
 

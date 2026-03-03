@@ -37,7 +37,7 @@ public interface StreamingTransfer extends AutoCloseable {
      * may be useful e.g. if you're only interested in FAILED events.
      * If no filter is given, all status updates will be signaled.
      *
-     * @param callback the listener to notify on status changes
+     * @param callback                     the listener to notify on status changes
      * @param optionalTransferStatusFilter if provided, the callback will only be invoked
      *                                     for these {@link StreamingResourceTransferStatus} values
      */

@@ -8,6 +8,7 @@ import java.util.Objects;
  * This includes both the transfer state (e.g., in-progress, completed, failed),
  * the last known size, and the number of lines (if applicable) of the resource,
  * at the time the status was generated.
+ *
  * @see StreamingResourceTransferStatus
  */
 public class StreamingResourceStatus {
@@ -27,7 +28,7 @@ public class StreamingResourceStatus {
      *
      * @param transferStatus the transfer status (must not be null)
      * @param currentSize    the current size of the resource
-     * @param numberOfLines    the current number of lines, if applicable
+     * @param numberOfLines  the current number of lines, if applicable
      * @throws NullPointerException if {@code transferStatus} is null
      */
     public StreamingResourceStatus(StreamingResourceTransferStatus transferStatus, long currentSize, Long numberOfLines) {
@@ -94,10 +95,10 @@ public class StreamingResourceStatus {
     @Override
     public String toString() {
         return "StreamingResourceStatus{" +
-                "transferStatus=" + transferStatus +
-                ", currentSize=" + currentSize +
-                ", numberOfLines=" + numberOfLines +
-                '}';
+            "transferStatus=" + transferStatus +
+            ", currentSize=" + currentSize +
+            ", numberOfLines=" + numberOfLines +
+            '}';
     }
 
     @Override

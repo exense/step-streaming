@@ -31,9 +31,9 @@ public class InMemoryCatalogBackend implements StreamingResourcesCatalogBackend 
     public String createResource(StreamingResourceMetadata metadata, StreamingResourceUploadContext uploadContext) {
         String resourceId = UUID.randomUUID().toString();
         catalog.put(resourceId, new CatalogEntry(
-                metadata.getFilename(),
-                metadata.getMimeType(),
-                new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L, metadata.getSupportsLineAccess() ? 0L: null)
+            metadata.getFilename(),
+            metadata.getMimeType(),
+            new StreamingResourceStatus(StreamingResourceTransferStatus.INITIATED, 0L, metadata.getSupportsLineAccess() ? 0L : null)
         ));
         return resourceId;
     }
