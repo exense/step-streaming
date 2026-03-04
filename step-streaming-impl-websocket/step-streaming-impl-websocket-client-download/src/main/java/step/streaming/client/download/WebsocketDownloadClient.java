@@ -253,9 +253,6 @@ public class WebsocketDownloadClient implements AutoCloseable {
 
             if (msg instanceof StatusChangedMessage) {
                 StreamingResourceStatus status = ((StatusChangedMessage) msg).resourceStatus;
-                if (!initialStatus.isDone()) {
-                    initialStatus.complete(status);
-                }
                 StreamingResourceStatus prev = lastReceivedStatus.getAndSet(status);
                 if (prev == null || !prev.equals(status)) {
                     logger.debug("Fan-out status {}", status);
@@ -265,7 +262,9 @@ public class WebsocketDownloadClient implements AutoCloseable {
                 } else {
                     logger.debug("Status dedup {}", status);
                 }
-
+                if (!initialStatus.isDone()) {
+                    initialStatus.complete(status);
+                }
             } else if (msg instanceof LinesMessage) {
                 logger.debug("LINES IN, expecting AWAITING_DOWNLOAD, state={}", state);
                 try {
