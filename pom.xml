@@ -62,7 +62,7 @@
     <maven.compiler.release>11</maven.compiler.release>
 
     <!-- All dependencies should be resolvable from here, without further specifying versions -->
-    <dependencies.version>0.0.0-SED-4408-SNAPSHOT</dependencies.version>
+    <dependencies.version>0.0.0-MASTER-SNAPSHOT</dependencies.version>
 
     <!-- Maven build modules versions -->
     <dep.mvn.compiler.version>3.14.0</dep.mvn.compiler.version>
