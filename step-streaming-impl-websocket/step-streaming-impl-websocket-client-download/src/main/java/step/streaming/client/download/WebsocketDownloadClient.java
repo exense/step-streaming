@@ -37,9 +37,15 @@ public class WebsocketDownloadClient implements AutoCloseable {
         return t;
     });
 
-    // Separate executor for user callbacks (status + lines)
-    private final ExecutorService deliveryExecutor = Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "ws-dl-client-delivery");
+    // Separate executors for user callbacks (status + lines)
+    private final ExecutorService statusExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "ws-dl-client-deliver-status");
+        t.setDaemon(true);
+        return t;
+    });
+
+    private final ExecutorService linesExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "ws-dl-client-deliver-lines");
         t.setDaemon(true);
         return t;
     });
@@ -232,7 +238,8 @@ public class WebsocketDownloadClient implements AutoCloseable {
                 for (Runnable r : closeListeners) safeRun(r);
                 // Now that we’re closed and fan-out is done, stop executors.
                 eventLoop.shutdown();
-                deliveryExecutor.shutdown();
+                statusExecutor.shutdown();
+                linesExecutor.shutdown();
             });
         }
 
@@ -257,7 +264,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
                 if (prev == null || !prev.equals(status)) {
                     logger.debug("Fan-out status {}", status);
                     for (Consumer<StreamingResourceStatus> l : statusListeners) {
-                        deliveryExecutor.execute(() -> safeAccept(l, status));
+                        statusExecutor.execute(() -> safeAccept(l, status));
                     }
                 } else {
                     logger.debug("Status dedup {}", status);
@@ -276,7 +283,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
                     if (c != null) {
                         List<String> lines = ((LinesMessage) msg).lines;
                         logger.debug("Delivering {} lines to consumer", lines.size());
-                        deliveryExecutor.execute(() -> safeAccept(c, lines));
+                        linesExecutor.execute(() -> safeAccept(c, lines));
                     }
                 } finally {
                     finishCurrent();
