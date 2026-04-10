@@ -2,7 +2,7 @@ package step.streaming.websocket.client.upload;
 
 import jakarta.websocket.*;
 import org.eclipse.jetty.client.HttpClient;
-import org.eclipse.jetty.websocket.jakarta.client.internal.JakartaWebSocketClientContainer;
+import org.eclipse.jetty.ee10.websocket.jakarta.client.JakartaWebSocketClientContainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.QuotaExceededException;
