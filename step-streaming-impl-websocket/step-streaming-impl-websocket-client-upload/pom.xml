@@ -26,8 +26,8 @@
     </dependency>
 
     <dependency>
-      <groupId>org.eclipse.jetty.websocket</groupId>
-      <artifactId>websocket-jakarta-client</artifactId>
+      <groupId>org.eclipse.jetty.ee10.websocket</groupId>
+      <artifactId>jetty-ee10-websocket-jakarta-client</artifactId>
     </dependency>
 
   </dependencies>

@@ -2,9 +2,8 @@ package step.streaming.websocket.client.upload;
 
 import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.WebSocketContainer;
-import org.eclipse.jetty.util.component.LifeCycle;
+import org.eclipse.jetty.ee10.websocket.jakarta.client.JakartaWebSocketClientContainer;
 import org.eclipse.jetty.websocket.core.client.WebSocketCoreClient;
-import org.eclipse.jetty.websocket.jakarta.client.internal.JakartaWebSocketClientContainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.client.upload.StreamingUploadProvider;
