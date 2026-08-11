@@ -49,15 +49,13 @@ public class InMemoryCatalogBackend implements StreamingResourcesCatalogBackend 
     }
 
     @Override
-    public StreamingResourceStatus getStatus(String resourceId) {
+    public StreamingResourceStatus getStatus(String resourceId) throws IllegalArgumentException {
         CatalogEntry entry = catalog.get(resourceId);
-        return entry != null ? entry.status : null;
-    }
-
-    // Optional: expose test utility method
-    public String getName(String resourceId) {
-        CatalogEntry entry = catalog.get(resourceId);
-        return entry != null ? entry.name : null;
+        if (entry == null) {
+            // Same behavior as the "real" Step backend
+            throw new IllegalArgumentException("Resource not found: " + resourceId);
+        }
+        return entry.status;
     }
 
     @Override

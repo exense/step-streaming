@@ -32,8 +32,9 @@ public interface StreamingResourcesCatalogBackend {
      *
      * @param resourceId internal resource identifier
      * @return the status metadata
+     * @throws IllegalArgumentException if the resource does not exist
      */
-    StreamingResourceStatus getStatus(String resourceId);
+    StreamingResourceStatus getStatus(String resourceId) throws IllegalArgumentException;
 
     /**
      * Deletes a resource.
