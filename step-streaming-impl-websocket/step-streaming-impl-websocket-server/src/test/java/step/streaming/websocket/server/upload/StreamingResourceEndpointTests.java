@@ -3,7 +3,12 @@ package step.streaming.websocket.server.upload;
 import jakarta.websocket.WebSocketContainer;
 import jakarta.websocket.server.ServerEndpointConfig;
 import org.eclipse.jetty.util.component.LifeCycle;
-import org.junit.*;
+import org.junit.After;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Ignore;
+import org.junit.Rule;
+import org.junit.Test;
 import org.junit.rules.TestRule;
 import org.junit.runners.model.Statement;
 import org.slf4j.Logger;
@@ -13,8 +18,16 @@ import step.streaming.client.download.WebsocketDownloadClient;
 import step.streaming.client.upload.StreamingUpload;
 import step.streaming.client.upload.StreamingUploadSession;
 import step.streaming.client.upload.StreamingUploads;
-import step.streaming.common.*;
-import step.streaming.data.*;
+import step.streaming.common.QuotaExceededException;
+import step.streaming.common.StreamingResourceMetadata;
+import step.streaming.common.StreamingResourceStatus;
+import step.streaming.common.StreamingResourceTransferStatus;
+import step.streaming.common.StreamingResourceUploadContexts;
+import step.streaming.data.CheckpointingOutputStream;
+import step.streaming.data.EndOfInputSignal;
+import step.streaming.data.LimitedBufferInputStream;
+import step.streaming.data.MD5CalculatingInputStream;
+import step.streaming.data.MD5CalculatingOutputStream;
 import step.streaming.server.URITemplateBasedReferenceProducer;
 import step.streaming.server.test.InMemoryCatalogBackend;
 import step.streaming.server.test.TestingStorageBackend;
@@ -25,9 +38,19 @@ import step.streaming.websocket.server.DefaultWebsocketServerEndpointSessionsHan
 import step.streaming.websocket.server.WebsocketDownloadEndpoint;
 import step.streaming.websocket.server.WebsocketServerEndpointSessionsHandler;
 import step.streaming.websocket.server.WebsocketUploadEndpoint;
-import step.streaming.websocket.test.*;
+import step.streaming.websocket.test.TestingResourceManager;
+import step.streaming.websocket.test.TestingWebsocketServer;
+import step.streaming.websocket.test.ThreadPools;
+import step.streaming.websocket.test.TricklingDelegatingInputStream;
+import step.streaming.websocket.test.TricklingRandomBytesInputStream;
 
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -40,7 +63,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 public class StreamingResourceEndpointTests {
 
@@ -128,12 +153,12 @@ public class StreamingResourceEndpointTests {
     }
 
     @Test
-    @Ignore
+//    @Ignore
     // for repeatedly running a particular test
     public void adNauseam() throws Exception {
-        for (int i = 0; i < 100; ++i) {
+        for (int i = 0; i < 50; ++i) {
             testHighLevelUploadWithSimultaneousDownloadsRandomData();
-            Thread.sleep(3000);
+            testLineBasedDownload();
         }
     }
 
