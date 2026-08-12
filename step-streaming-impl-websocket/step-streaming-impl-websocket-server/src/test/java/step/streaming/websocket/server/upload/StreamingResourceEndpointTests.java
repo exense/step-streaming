@@ -152,9 +152,9 @@ public class StreamingResourceEndpointTests {
             .build();
     }
 
+    // for repeatedly running particular flaky tests
     @Test
 //    @Ignore
-    // for repeatedly running a particular test
     public void adNauseam() throws Exception {
         for (int i = 0; i < 50; ++i) {
             testHighLevelUploadWithSimultaneousDownloadsRandomData();
@@ -364,19 +364,23 @@ public class StreamingResourceEndpointTests {
         Thread downloadThread = new Thread(() -> {
             CompletableFuture<Boolean> completed = new CompletableFuture<>();
             AtomicLong linesReceived = new AtomicLong(0);
+            AtomicLong linesRequested = new AtomicLong(0);
             AtomicReference<StreamingResourceStatus> status = new AtomicReference<>();
             // we'll directly request newly available lines when the server says they're ready
             downloadClient.registerStatusListener(serverSideStatus -> {
                 status.set(serverSideStatus);
-                long linesToFetch = status.get().getNumberOfLines() - linesReceived.get();
+                long currentRequested = linesRequested.get(); // Snapshot what we've already asked for
+                long linesToFetch = status.get().getNumberOfLines() - currentRequested;
+
                 logger.info("status received: {}, linesReceived={} => linesToFetch={}", status.get(), linesReceived.get(), linesToFetch);
                 if (status.get().getTransferStatus().equals(StreamingResourceTransferStatus.FAILED)) {
                     completed.completeExceptionally(new IllegalStateException("" + StreamingResourceTransferStatus.FAILED));
                 }
                 if (linesToFetch > 0) {
+                    linesRequested.addAndGet(linesToFetch);
                     try {
-                        logger.info("Calling requestTextLines({},{},...)", linesReceived.get(), linesToFetch);
-                        downloadClient.requestTextLines(linesReceived.get(), linesToFetch, lines -> {
+                        logger.info("Calling requestTextLines({},{},...)", currentRequested, linesToFetch);
+                        downloadClient.requestTextLines(currentRequested, linesToFetch, lines -> {
                             linesReceived.addAndGet(lines.size());
                             logger.info("Received {} lines -> {}", lines.size(), linesReceived.get());
                             for (String line : lines) {
@@ -395,7 +399,8 @@ public class StreamingResourceEndpointTests {
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
-                } else if (status.get().getTransferStatus().equals(StreamingResourceTransferStatus.COMPLETED)) {
+                } else if (status.get().getTransferStatus().equals(StreamingResourceTransferStatus.COMPLETED) &&
+                    status.get().getNumberOfLines() == linesReceived.get()) {
                     logger.info("Status is completed(1), finishing");
                     completed.complete(true);
                 }
@@ -405,11 +410,22 @@ public class StreamingResourceEndpointTests {
                 if (linesReceived.get() != 296) {
                     throw new RuntimeException("Expected 296 lines, got " + linesReceived.get());
                 }
-                md5Out.close();
             } catch (Exception e) {
                 throw new RuntimeException(e);
+            } finally {
+                try {
+                    md5Out.close();
+                } catch (Exception ignored) {
+                }
             }
         });
+        AtomicReference<Throwable> threadError = new AtomicReference<>();
+
+        downloadThread.setUncaughtExceptionHandler((t, e) -> {
+            logger.error("Fatal error in download thread", e);
+            threadError.set(e); // Capture it for the main thread
+        });
+
         downloadThread.start();
 
         // synchronous and blocking
@@ -417,6 +433,11 @@ public class StreamingResourceEndpointTests {
         upload.signalEndOfInput();
         downloadThread.join();
         downloadClient.close();
+
+        // In case the thread crashed, rethrow exception here for JUnit
+        if (threadError.get() != null) {
+            throw new AssertionError("Background thread failed: " + threadError.get().getMessage(), threadError.get());
+        }
 
         // we retrieved the data using line-based access, but this should be exactly equivalent to the raw file
         assertEquals(FAUST_UTF8_CHECKSUM, md5Out.getChecksum());
