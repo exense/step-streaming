@@ -152,9 +152,9 @@ public class StreamingResourceEndpointTests {
             .build();
     }
 
-    // for repeatedly running particular flaky tests
+    // for repeatedly running particular flaky tests, if needed
     @Test
-//    @Ignore
+    @Ignore
     public void adNauseam() throws Exception {
         for (int i = 0; i < 20; ++i) {
             testHighLevelUploadWithSimultaneousDownloadsRandomData();
