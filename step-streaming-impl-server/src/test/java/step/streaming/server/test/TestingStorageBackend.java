@@ -8,6 +8,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 
 /**
  * A test-friendly subclass of {@link FilesystemStreamingResourcesStorageBackend} that uses a temporary directory
@@ -52,16 +53,17 @@ public class TestingStorageBackend extends FilesystemStreamingResourcesStorageBa
     private void deleteRecursively(Path path) throws IOException {
         if (!Files.exists(path)) return;
 
-        Files.walk(path)
-            .sorted((a, b) -> b.compareTo(a)) // delete children before parents
-            .forEach(p -> {
-                try {
-                    logger.debug("Cleaning up: deleting {} {}", p.toFile().isDirectory() ? "directory" : "file", p);
-                    Files.delete(p);
-                } catch (IOException e) {
-                    throw new RuntimeException("Failed to delete: " + p, e);
-                }
-            });
+        try (var files = Files.walk(path)) {
+            files.sorted(Comparator.reverseOrder()) // delete children before parents
+                .forEach(p -> {
+                    try {
+                        logger.debug("Cleaning up: deleting {} {}", p.toFile().isDirectory() ? "directory" : "file", p);
+                        Files.delete(p);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Failed to delete: " + p, e);
+                    }
+                });
+        }
     }
 
     /**
@@ -69,5 +71,16 @@ public class TestingStorageBackend extends FilesystemStreamingResourcesStorageBa
      */
     public File getTempDirectory() {
         return tempDirectory;
+    }
+
+    /**
+     * Returns the total number of (raw, OS) files found in the storage
+     */
+    public int countFiles() {
+        try (var files = Files.walk(tempDirectory.toPath())) {
+            return (int) files.filter(Files::isRegularFile).count();
+        } catch (java.io.IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

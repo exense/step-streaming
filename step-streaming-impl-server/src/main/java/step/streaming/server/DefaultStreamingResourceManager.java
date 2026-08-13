@@ -2,10 +2,17 @@ package step.streaming.server;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import step.streaming.common.*;
+import step.streaming.common.QuotaExceededException;
+import step.streaming.common.StreamingResourceMetadata;
+import step.streaming.common.StreamingResourceReference;
+import step.streaming.common.StreamingResourceStatus;
+import step.streaming.common.StreamingResourceTransferStatus;
+import step.streaming.common.StreamingResourceUploadContext;
+import step.streaming.common.StreamingResourceUploadContexts;
 import step.streaming.util.ExceptionsUtil;
 import step.streaming.util.ThrowingConsumer;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -233,6 +240,14 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     @Override
     public InputStream openStream(String resourceId, long start, long end) throws IOException {
         logger.debug("Opening stream for {}, chunk [{}, {}]", resourceId, start, end);
+        StreamingResourceStatus status = catalog.getStatus(resourceId);
+        if (status.getCurrentSize() == 0) {
+            // If the client is behaving, the only valid arguments for 0-byte resources are really start=0, end=0.
+            // Shortcut the storage entirely for that case.
+            if (start == 0 && end == 0) {
+                return new ByteArrayInputStream(new byte[0]);
+            }
+        }
         return storage.openReadStream(resourceId, start, end);
     }
 
@@ -264,6 +279,22 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
     }
 
     private void emitStatus(String resourceId, StreamingResourceStatus status) {
+        // emitStatus() is called on all code paths, including markCompleted() and markFailed().
+        // ONLY when the size is 0 AND the status transitions to a final state (COMPLETED, FAILED), we can optimize the
+        // physical storage away: we do not need to keep 0-byte files around, they unnecessarily occupy FS entries(inodes)
+        if (status.getCurrentSize() == 0) {
+            StreamingResourceTransferStatus transferStatus = status.getTransferStatus();
+            if (transferStatus.equals(StreamingResourceTransferStatus.COMPLETED)
+                || transferStatus.equals(StreamingResourceTransferStatus.FAILED)) {
+                logger.debug("Deleting unneeded physical data for 0-byte resource, id={}", resourceId);
+                try {
+                    storage.delete(resourceId);
+                } catch (IOException e) {
+                    logger.error("Unable to delete unneeded physical data for 0-byte resource, id={}", resourceId, e);
+                }
+            }
+        }
+
         var listeners = statusListeners.get(resourceId);
         if (listeners != null) {
             logger.debug("Emitting status update to {} listener(s) for {}: {}", listeners.size(), resourceId, status);
@@ -294,7 +325,7 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
         if (count < 0) {
             throw new IllegalArgumentException("count must not be negative");
         }
-        // edge case -> return an empty stream when count is 0, regardless of requested index.
+        // edge case -> return an empty list when count is 0, regardless of requested index.
         if (count == 0) {
             return List.of();
         }
@@ -330,6 +361,12 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
 
     @Override
     public List<String> getLines(String resourceId, long startingLineIndex, long count) throws IOException {
+        // this will throw an IllegalArgumentException if the ID does not exist
+        StreamingResourceStatus status = catalog.getStatus(resourceId);
+        if (status.getNumberOfLines() == null) {
+            throw new IllegalArgumentException("Resource " + resourceId + " does not support access by line number");
+        }
+        // edge case -> return an empty list when count is 0, regardless of requested index.
         if (count == 0) {
             return List.of();
         }
@@ -348,9 +385,9 @@ public class DefaultStreamingResourceManager implements StreamingResourceManager
 
         // Determine the complete range of bytes we need to read:
         // Start **after** the previous linebreak (or at beginning of file)
-        long firstByteInclusive = needPreviousLB ? linebreakPositions.get(0) + 1 : 0;
+        long firstByteInclusive = needPreviousLB ? linebreakPositions.getFirst() + 1 : 0;
         // End at the last linebreak position (+1 because "end of read position" is exclusive)
-        long lastByteExclusive = linebreakPositions.get(linebreakPositions.size() - 1) + 1;
+        long lastByteExclusive = linebreakPositions.getLast() + 1;
 
         // Read everything in one go, splitting at the LB positions
         try (InputStream in = openStream(resourceId, firstByteInclusive, lastByteExclusive)) {
