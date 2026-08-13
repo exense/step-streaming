@@ -1,80 +1,67 @@
 package step.streaming.client.download;
 
-import jakarta.websocket.*;
+import jakarta.websocket.ClientEndpointConfig;
+import jakarta.websocket.CloseReason;
+import jakarta.websocket.ContainerProvider;
+import jakarta.websocket.DeploymentException;
+import jakarta.websocket.EndpointConfig;
+import jakarta.websocket.Session;
+import jakarta.websocket.WebSocketContainer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import step.streaming.common.StreamingResourceStatus;
 import step.streaming.common.StreamingResourceTransferStatus;
 import step.streaming.websocket.CloseReasonUtil;
 import step.streaming.websocket.HalfCloseCompatibleEndpoint;
-import step.streaming.websocket.protocol.download.*;
+import step.streaming.websocket.protocol.download.DownloadProtocolMessage;
+import step.streaming.websocket.protocol.download.DownloadServerMessage;
+import step.streaming.websocket.protocol.download.LinesMessage;
+import step.streaming.websocket.protocol.download.RequestChunkMessage;
+import step.streaming.websocket.protocol.download.RequestLinesMessage;
+import step.streaming.websocket.protocol.download.StatusChangedMessage;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 public class WebsocketDownloadClient implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(WebsocketDownloadClient.class);
 
-    private enum State {CREATED, READY, AWAITING_DOWNLOAD, DOWNLOADING, CLOSED}
-
     private final Session session;
-    private final WebsocketDownloadClient self = this;
+    private final Remote endpoint;
 
-    // Single-threaded event loop for control plane
-    private final ExecutorService eventLoop = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "ws-dl-client-loop");
+    // Single executor for all user callbacks (status + lines)
+    private final ExecutorService callbackExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "ws-dl-client-callbacks");
         t.setDaemon(true);
         return t;
     });
 
-    // Separate executors for user callbacks (status + lines)
-    private final ExecutorService statusExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "ws-dl-client-deliver-status");
-        t.setDaemon(true);
-        return t;
-    });
+    // Concurrency control for request pipelining
+    private final Object lock = new Object();
+    private final Queue<Runnable> requestQueue = new ArrayDeque<>();
+    private boolean isRequestInFlight = false;
+    private volatile boolean closed = false;
 
-    private final ExecutorService linesExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "ws-dl-client-deliver-lines");
-        t.setDaemon(true);
-        return t;
-    });
+    private Consumer<InputStream> activeStreamConsumer;
+    private Consumer<List<String>> activeLinesConsumer;
 
-    private volatile State state = State.CREATED;
-    private volatile boolean busy;
-
-    // Request queue (serialized on event loop)
-    private abstract static class Request {
-        abstract void send(Session s) throws Exception;
-
-        abstract String hint();
-    }
-
-    private final Deque<Request> requests = new ArrayDeque<>();
-    private final AtomicLong requestIds = new AtomicLong();
-    private volatile long inFlightReqId;
-
-    // Status plumbing
     private final CompletableFuture<StreamingResourceStatus> initialStatus = new CompletableFuture<>();
     private final AtomicReference<StreamingResourceStatus> lastReceivedStatus = new AtomicReference<>();
     private final List<Consumer<StreamingResourceStatus>> statusListeners = new CopyOnWriteArrayList<>();
-
-    // Close listeners
     private final List<Runnable> closeListeners = new CopyOnWriteArrayList<>();
-
-    private final Remote endpoint;
-    private Consumer<InputStream> dataConsumer;
-    private Consumer<List<String>> linesConsumer;
 
     public WebsocketDownloadClient(URI endpointUri) throws IOException {
         this(endpointUri, ContainerProvider.getWebSocketContainer());
@@ -88,6 +75,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
                 ClientEndpointConfig.Builder.create().build(),
                 endpointUri);
             logger.info("Connected to {}, waiting for initial status...", endpointUri);
+
             try {
                 initialStatus.get(30, TimeUnit.SECONDS);
             } catch (Exception e) {
@@ -104,7 +92,6 @@ public class WebsocketDownloadClient implements AutoCloseable {
     public void registerStatusListener(Consumer<StreamingResourceStatus> statusListener) {
         statusListeners.add(statusListener);
         StreamingResourceStatus last = lastReceivedStatus.get();
-        logger.debug("StatusListener registered, synchronously sending status unless null: {}", last);
         if (last != null) {
             safeAccept(statusListener, last);
         }
@@ -120,83 +107,62 @@ public class WebsocketDownloadClient implements AutoCloseable {
 
     @Override
     public void close() {
-        runOnLoop(() -> {
-            logger.debug("[CLOSE called] state={}, busy={}, q={}", state, busy, requests.size());
-            if (state == State.CLOSED) return;
-            state = State.CLOSED;
-            if (session.isOpen()) {
+        synchronized (lock) {
+            if (closed) return;
+            closed = true;
+            requestQueue.clear();
+        }
+        if (session != null && session.isOpen()) {
+            try {
                 endpoint.closeSession(session, CloseReasonUtil.makeSafeCloseReason(
                     CloseReason.CloseCodes.NORMAL_CLOSURE, "Client Session closed"));
+            } catch (Exception ignored) {
             }
-            requests.clear();
-            // We will shut down the executors in onSessionClose after fan-out.
-        });
+        }
     }
 
     public void requestChunkStream(long startOffset, long endOffset, Consumer<InputStream> streamConsumer) {
         Objects.requireNonNull(streamConsumer, "streamConsumer");
-        runOnLoop(() -> {
-            requireOpen();
-            StreamingResourceStatus st = lastReceivedStatus.get();
-            if (st == null) throw new IllegalStateException("No status yet");
-            if (startOffset < 0 || startOffset > endOffset) throw new IllegalArgumentException("Bad offsets");
-            if (endOffset > st.getCurrentSize())
-                throw new IllegalArgumentException("endOffset " + endOffset + " > " + st.getCurrentSize());
+        StreamingResourceStatus st = lastReceivedStatus.get();
+        if (st == null) throw new IllegalStateException("No status yet");
+        if (startOffset < 0 || startOffset > endOffset) throw new IllegalArgumentException("Bad offsets");
+        if (endOffset > st.getCurrentSize())
+            throw new IllegalArgumentException("endOffset " + endOffset + " > " + st.getCurrentSize());
 
-            long id = requestIds.incrementAndGet();
-            Request req = new Request() {
-                @Override
-                void send(Session s) throws Exception {
-                    state = State.AWAITING_DOWNLOAD;
-                    inFlightReqId = id;
-                    dataConsumer = streamConsumer;
-                    logger.debug("[SEND chunk {} PRE] [{}] state={}, q={}", id, hint(), state, requests.size());
-                    s.getBasicRemote().sendText(new RequestChunkMessage(startOffset, endOffset).toString());
-                    logger.debug("[SEND chunk {} POST] [{}] state={}, q={}", id, hint(), state, requests.size());
-                }
-
-                @Override
-                String hint() {
-                    return "chunk[" + startOffset + "," + endOffset + "]";
-                }
-            };
-            enqueueOrStart(req);
+        enqueueAndTrySend(() -> {
+            synchronized (lock) {
+                activeStreamConsumer = streamConsumer;
+            }
+            try {
+                session.getBasicRemote().sendText(new RequestChunkMessage(startOffset, endOffset).toString());
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to send chunk request", e);
+            }
         });
     }
 
     public void requestTextLines(long startingLineIndex, long linesCount, Consumer<List<String>> linesConsumer) {
         Objects.requireNonNull(linesConsumer, "linesConsumer");
-        runOnLoop(() -> {
-            requireOpen();
-            StreamingResourceStatus st = lastReceivedStatus.get();
-            if (st == null) throw new IllegalStateException("No status yet");
-            if (st.getTransferStatus() == StreamingResourceTransferStatus.FAILED)
-                throw new IllegalStateException("Remote resource FAILED");
-            if (st.getNumberOfLines() == null)
-                throw new IllegalStateException("Remote resource does not support line access");
-            if (startingLineIndex < 0 || linesCount < 0)
-                throw new IllegalArgumentException("Bad line params");
-            if (st.getNumberOfLines() < startingLineIndex + linesCount)
-                throw new IllegalArgumentException("Line request out of bounds");
+        StreamingResourceStatus st = lastReceivedStatus.get();
+        if (st == null) throw new IllegalStateException("No status yet");
+        if (st.getTransferStatus() == StreamingResourceTransferStatus.FAILED)
+            throw new IllegalStateException("Remote resource FAILED");
+        if (st.getNumberOfLines() == null)
+            throw new IllegalStateException("Remote resource does not support line access");
+        if (startingLineIndex < 0 || linesCount < 0)
+            throw new IllegalArgumentException("Bad line params");
+        if (st.getNumberOfLines() < startingLineIndex + linesCount)
+            throw new IllegalArgumentException("Line request out of bounds");
 
-            long id = requestIds.incrementAndGet();
-            Request req = new Request() {
-                @Override
-                void send(Session s) throws Exception {
-                    state = State.AWAITING_DOWNLOAD;
-                    inFlightReqId = id;
-                    WebsocketDownloadClient.this.linesConsumer = linesConsumer;
-                    logger.debug("[SEND lines {} PRE] [{}] state={}, q={}", id, hint(), state, requests.size());
-                    s.getBasicRemote().sendText(new RequestLinesMessage(startingLineIndex, linesCount).toString());
-                    logger.debug("[SEND lines {} POST] [{}] state={}, q={}", id, hint(), state, requests.size());
-                }
-
-                @Override
-                String hint() {
-                    return "lines[start=" + startingLineIndex + ",count=" + linesCount + "]";
-                }
-            };
-            enqueueOrStart(req);
+        enqueueAndTrySend(() -> {
+            synchronized (lock) {
+                activeLinesConsumer = linesConsumer;
+            }
+            try {
+                session.getBasicRemote().sendText(new RequestLinesMessage(startingLineIndex, linesCount).toString());
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to send lines request", e);
+            }
         });
     }
 
@@ -217,30 +183,113 @@ public class WebsocketDownloadClient implements AutoCloseable {
         return cf;
     }
 
+    // ---- Pipelining Engine -------------------------------------------------
+
+    private void enqueueAndTrySend(Runnable sendTask) {
+        synchronized (lock) {
+            if (closed) throw new IllegalStateException("Client is closed");
+            requestQueue.add(sendTask);
+        }
+        pumpQueue();
+    }
+
+    private void pumpQueue() {
+        Runnable task = null;
+        synchronized (lock) {
+            if (!isRequestInFlight && !requestQueue.isEmpty()) {
+                isRequestInFlight = true;
+                task = requestQueue.poll();
+            }
+        }
+        if (task != null) {
+            try {
+                task.run();
+            } catch (Exception e) {
+                logger.error("Error executing request task", e);
+                completeCurrentRequest();
+            }
+        }
+    }
+
+    private void completeCurrentRequest() {
+        synchronized (lock) {
+            isRequestInFlight = false;
+        }
+        pumpQueue();
+    }
+
+    // ---- Incoming Frames ---------------------------------------------------
+
+    private void onTextData(String messageString) {
+        if (closed) return;
+        DownloadServerMessage msg = DownloadServerMessage.fromString(messageString);
+
+        if (msg instanceof StatusChangedMessage) {
+            StreamingResourceStatus status = ((StatusChangedMessage) msg).resourceStatus;
+            StreamingResourceStatus prev = lastReceivedStatus.getAndSet(status);
+
+            if (prev == null || !prev.equals(status)) {
+                initialStatus.complete(status);
+                statusListeners.forEach(l -> callbackExecutor.execute(() -> safeAccept(l, status)));
+            }
+        } else if (msg instanceof LinesMessage) {
+            Consumer<List<String>> consumer;
+            synchronized (lock) {
+                consumer = activeLinesConsumer;
+                activeLinesConsumer = null;
+            }
+            if (consumer != null) {
+                List<String> lines = ((LinesMessage) msg).lines;
+                callbackExecutor.execute(() -> safeAccept(consumer, lines));
+            }
+            completeCurrentRequest();
+        } else {
+            logger.warn("Unexpected message: {}", msg);
+        }
+    }
+
+    private void onStreamData(InputStream inputStream) {
+        if (closed) return;
+
+        Consumer<InputStream> consumer;
+        synchronized (lock) {
+            consumer = activeStreamConsumer;
+            activeStreamConsumer = null;
+        }
+
+        if (consumer != null) {
+            safeAccept(consumer, inputStream);
+        } else {
+            logger.warn("Received InputStream but no active request was found.");
+        }
+
+        try {
+            inputStream.close();
+        } catch (IOException ignored) {
+        }
+
+        completeCurrentRequest();
+    }
+
     // ---- Jetty endpoint ----------------------------------------------------
 
     private class Remote extends HalfCloseCompatibleEndpoint {
         @Override
         public void onOpen(Session session, EndpointConfig config) {
             session.setMaxIdleTimeout(0);
-            session.addMessageHandler(String.class, self::onTextData);
-            session.addMessageHandler(InputStream.class, self::onStreamData);
-            state = State.READY; // visible state before first message
-            logger.debug("[onOpen] state set to READY");
+            session.addMessageHandler(String.class, WebsocketDownloadClient.this::onTextData);
+            session.addMessageHandler(InputStream.class, WebsocketDownloadClient.this::onStreamData);
         }
 
         @Override
         public void onSessionClose(Session session, CloseReason closeReason) {
-            runOnLoop(() -> {
-                logger.info("[onSessionClose] {}", closeReason);
-                state = State.CLOSED;
-                requests.clear();
-                for (Runnable r : closeListeners) safeRun(r);
-                // Now that we’re closed and fan-out is done, stop executors.
-                eventLoop.shutdown();
-                statusExecutor.shutdown();
-                linesExecutor.shutdown();
-            });
+            logger.info("[onSessionClose] {}", closeReason);
+            synchronized (lock) {
+                closed = true;
+                requestQueue.clear();
+            }
+            for (Runnable r : closeListeners) safeRun(r);
+            callbackExecutor.shutdown();
         }
 
         @Override
@@ -249,123 +298,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
         }
     }
 
-    // ---- Incoming frames ---------------------------------------------------
-
-    private void onTextData(String messageString) {
-        runOnLoop(() -> {
-            if (state == State.CLOSED) return;
-            logger.debug("[TEXT IN] state={}, busy={}, q={}, inFlightReqId={}, loop=ws-dl-client-loop",
-                state, busy, requests.size(), inFlightReqId);
-            DownloadServerMessage msg = DownloadServerMessage.fromString(messageString);
-
-            if (msg instanceof StatusChangedMessage) {
-                StreamingResourceStatus status = ((StatusChangedMessage) msg).resourceStatus;
-                StreamingResourceStatus prev = lastReceivedStatus.getAndSet(status);
-                if (prev == null || !prev.equals(status)) {
-                    logger.debug("Fan-out status {}", status);
-                    for (Consumer<StreamingResourceStatus> l : statusListeners) {
-                        statusExecutor.execute(() -> safeAccept(l, status));
-                    }
-                } else {
-                    logger.debug("Status dedup {}", status);
-                }
-                if (!initialStatus.isDone()) {
-                    initialStatus.complete(status);
-                }
-            } else if (msg instanceof LinesMessage) {
-                logger.debug("LINES IN, expecting AWAITING_DOWNLOAD, state={}", state);
-                try {
-                    if (state != State.AWAITING_DOWNLOAD)
-                        throw new IllegalStateException("Unexpected lines when state=" + state);
-                    state = State.READY;
-                    Consumer<List<String>> c = this.linesConsumer;
-                    this.linesConsumer = null;
-                    if (c != null) {
-                        List<String> lines = ((LinesMessage) msg).lines;
-                        logger.debug("Delivering {} lines to consumer", lines.size());
-                        linesExecutor.execute(() -> safeAccept(c, lines));
-                    }
-                } finally {
-                    finishCurrent();
-                }
-
-            } else {
-                throw new IllegalStateException("Unexpected message: " + msg);
-            }
-        });
-    }
-
-    // Binary frames (data plane)
-    private void onStreamData(InputStream inputStream) {
-        if (state != State.AWAITING_DOWNLOAD) {
-            logger.debug("Unexpected InputStream while state={}", state);
-        }
-        state = State.DOWNLOADING;
-        if (dataConsumer != null) {
-            dataConsumer.accept(inputStream);
-        }
-        try {
-            inputStream.close();
-        } catch (IOException ignored) {
-        }
-        dataConsumer = null;
-        runOnLoop(this::finishCurrent);
-    }
-
-    // ---- Event-loop helpers ------------------------------------------------
-
-    private void enqueueOrStart(Request req) {
-        if (busy) {
-            requests.addLast(req);
-            logger.debug("[ENQ] [{}] now q={}", req.hint(), requests.size());
-        } else {
-            busy = true;
-            sendNow(req);
-        }
-    }
-
-    private void sendNow(Request req) {
-        try {
-            inFlightReqId = requestIds.get();
-            logger.debug("[SEND] [{}] start, state={}, q={}", req.hint(), state, requests.size());
-            req.send(session);
-            logger.debug("[SEND] [{}] done, state={}, q={}", req.hint(), state, requests.size());
-        } catch (Exception e) {
-            busy = false;
-            throw new RuntimeException(e);
-        }
-    }
-
-    private void finishCurrent() {
-        logger.debug("[FINISH start] state={}, busy={}, queueSize={}, inFlightReqId={}",
-            state, busy, requests.size(), inFlightReqId);
-        state = State.READY;
-        Request next = requests.pollFirst();
-        if (next != null) {
-            logger.debug("[FINISH startNext -> {}] state={}, q={}", next.hint(), state, requests.size());
-            sendNow(next);
-        } else {
-            busy = false;
-            inFlightReqId = 0L;
-            logger.debug("[FINISH idle] state={}, busy={}, queueSize={}", state, busy, requests.size());
-        }
-    }
-
-    private void runOnLoop(Runnable r) {
-        try {
-            if (!eventLoop.isShutdown()) {
-                eventLoop.execute(r);
-            } else {
-                logger.debug("[runOnLoop] loop is shut down; dropping task");
-            }
-        } catch (RejectedExecutionException rex) {
-            logger.debug("[runOnLoop] task rejected (loop terminated): {}", rex.toString());
-        }
-    }
-
-    private void requireOpen() {
-        if (state == State.CLOSED) throw new IllegalStateException("Client closed");
-    }
+    // ---- Helpers -----------------------------------------------------------
 
     private static <T> void safeAccept(Consumer<T> c, T v) {
         try {
@@ -378,8 +311,7 @@ public class WebsocketDownloadClient implements AutoCloseable {
     private static void safeRun(Runnable r) {
         try {
             r.run();
-        } catch (RuntimeException ex) {
-            // swallow; listener bugs shouldn’t kill us
+        } catch (RuntimeException ignored) {
         }
     }
 }
