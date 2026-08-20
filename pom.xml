@@ -60,7 +60,7 @@
     <maven.compiler.release>21</maven.compiler.release>
 
     <!-- All dependencies should be resolvable from here, without further specifying versions -->
-    <dependencies.version>2026.8.5</dependencies.version>
+    <dependencies.version>2026.8.20</dependencies.version>
   </properties>
 
   <!-- available dependencies, can/should be used in modules and dependent projects WITHOUT specifying a version number -->
